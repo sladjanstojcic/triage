@@ -13,3 +13,9 @@
 
 # env files
 .env*
+
+# agent instructions (kept local)
+CLAUDE.md
+AGENTS.md
+.claude/
+.codex/
