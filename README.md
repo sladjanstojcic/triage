@@ -1,5 +1,16 @@
 # Triage
 
+<p>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/sladjanstojcic/triage?style=flat-square"></a>
+  <img alt="Platform: macOS" src="https://img.shields.io/badge/platform-macOS-000?style=flat-square&logo=apple&logoColor=white">
+  <img alt="Node 20.19+ or 22.12+" src="https://img.shields.io/badge/node-20.19%2B%20%7C%2022.12%2B-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white">
+  <img alt="Vite 8" src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white">
+  <img alt="Tailwind CSS 4" src="https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white">
+  <a href="https://github.com/sladjanstojcic/triage/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/sladjanstojcic/triage?style=flat-square"></a>
+</p>
+
 **One local page that shows everything running on your Mac and your remote dev servers while you juggle several projects at once.**
 
 Every listening port, dev server, Docker container, SSH tunnel and remote host, grouped by the project folder it belongs to, with who started it and stop buttons that ask before acting.
