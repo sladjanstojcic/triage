@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" class="h-full antialiased">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Every server, port, container, SSH tunnel and remote host on this machine." />
+    <link rel="icon" href="/favicon.ico" />
+    <title>Triage — what's running</title>
+    <!-- set the theme before first paint so a dark choice doesn't flash light (src/lib/theme.ts owns it after load) -->
+    <script>
+      try {
+        var t = localStorage.getItem("triage-theme");
+        if (t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches)) {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="min-h-full flex flex-col bg-background text-foreground">
+    <div id="root" class="contents"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
