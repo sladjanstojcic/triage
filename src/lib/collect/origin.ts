@@ -7,6 +7,16 @@ import type { Origin } from "./types";
 
 export type ProcRow = { pid: number; ppid: number; tty?: string; command: string };
 
+/** Dev CLIs that spawn the actual server (`next dev` → next-server). */
+export const DEV_CLI = /\b(next|nuxt|astro|remix|vite|react-router)\b.*\b(dev|start|preview)\b/;
+
+/** Stop the dev CLI (`next dev`) rather than the server it spawned, so it can't respawn or linger. */
+export function stopPidFor(pid: number, table: Map<number, ProcRow>): number {
+  const row = table.get(pid);
+  const parent = row ? table.get(row.ppid) : undefined;
+  return parent && parent.pid > 1 && DEV_CLI.test(parent.command) && !DEV_CLI.test(row!.command) ? parent.pid : pid;
+}
+
 /** Environment variables that say where a process was launched from; children inherit them. */
 export const ORIGIN_ENV = ["__CFBundleIdentifier", "TERM_PROGRAM", "CLAUDECODE", "XPC_SERVICE_NAME", "INVOCATION_ID", "TMUX"];
 

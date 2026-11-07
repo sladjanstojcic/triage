@@ -4,7 +4,7 @@ import { removeRemoteHost } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { PortRow, RemoteListener, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
-import { count, shortUptime } from "@/lib/format";
+import { count, matches, shortUptime } from "@/lib/format";
 import { isUp, localTunnel } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
 import { BindBadge, Command, CopyPath, Empty, OriginLine, TunnelLinks } from "../cells";
@@ -107,9 +107,8 @@ function visibleRows(h: RemoteSnapshot, showSystem: boolean, query: string): Hos
   let listeners = showSystem ? own : own.filter((l) => !l.system);
   const hidden = own.length - listeners.length;
   let containers = h.containers;
-  const needle = query.trim().toLowerCase();
-  const hit = (v: unknown) => JSON.stringify(v).toLowerCase().includes(needle);
-  if (needle && !hit([h.name, h.hostname, h.sshTarget])) {
+  const hit = (v: unknown) => matches(v, query);
+  if (query.trim() && !hit([h.name, h.hostname, h.sshTarget])) {
     listeners = listeners.filter(hit);
     containers = containers.filter(hit);
     if (listeners.length === 0 && containers.length === 0) return null;
@@ -140,6 +139,7 @@ function HostSection({
   const key = groupKey("remote", String(h.id));
   const open = !collapsed.has(key);
   const { listeners, containers, hidden } = rows;
+  const stopped = containers.filter((c) => !isUp(c)).length;
 
   return (
     <section className="space-y-2">
@@ -169,7 +169,7 @@ function HostSection({
           {[
             count(listeners.length, "port"),
             count(containers.filter(isUp).length, "container"),
-            containers.some((c) => !isUp(c)) && `${containers.filter((c) => !isUp(c)).length} stopped`,
+            stopped > 0 && `${stopped} stopped`,
           ]
             .filter(Boolean)
             .join(" · ")}

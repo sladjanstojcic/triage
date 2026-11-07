@@ -1,5 +1,3 @@
-"use client"
-
 import { useSyncExternalStore } from "react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { resolvedTheme, subscribeTheme } from "@/lib/theme"

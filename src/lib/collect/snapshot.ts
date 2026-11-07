@@ -1,4 +1,5 @@
 import os from "node:os";
+import { isLoopback } from "@/lib/format";
 import { containerTech } from "@/lib/grouping";
 import { collectContainers } from "./docker";
 import { collectListeningProcesses, listProcesses } from "./local";
@@ -33,9 +34,9 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
         const fwd = conn.forwards.find((f) => f.localPort === l.port);
         const dest = fwd?.kind === "D" ? "SOCKS proxy" : fwd?.destHost ? `${fwd.destHost}:${fwd.destPort}` : undefined;
         // a forward to the host's own loopback reaches a port we can look up on that host
-        const onHost = fwd?.kind === "L" && /^(localhost|127\.0\.0\.1|::1)$/.test(fwd.destHost ?? "");
+        const onHost = fwd?.kind === "L" && isLoopback(fwd.destHost ?? "");
         rows.push({
-          ...base, ownerKind: "ssh", owner: `${conn.target} → ${dest ?? "?"}`, tech: "SSH tunnel", system: false,
+          ...base, ownerKind: "ssh", owner: `${conn.target} → ${dest ?? "?"}`, sshTarget: conn.target, tech: "SSH tunnel", system: false,
           sshHost: conn.hostname ?? conn.target, remotePort: onHost ? fwd.destPort : undefined, stopPid: conn.stopPid,
         });
         continue;
@@ -55,9 +56,10 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
 
 export async function collectSnapshot(): Promise<Snapshot> {
   const errors: string[] = [];
-  const ps = await listProcesses();
-  const [listening, docker, tailscale, machine] = await Promise.all([
-    collectListeningProcesses(ps),
+  const psRows = listProcesses();
+  const [ps, listening, docker, tailscale, machine] = await Promise.all([
+    psRows,
+    psRows.then(collectListeningProcesses),
     collectContainers(),
     collectTailscale(),
     collectMachine(),

@@ -2,7 +2,7 @@ import { ArrowRightIcon, BatteryChargingIcon, BatteryIcon, CheckCircle2Icon, Cir
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { type AttentionItem, attentionItems } from "@/lib/attention";
+import { type AttentionItem, attentionItems, usageLevel } from "@/lib/attention";
 import type { DockerDiskRow, MachineInfo, RemoteSnapshot, Snapshot, Usage } from "@/lib/collect/types";
 import { formatBytes, since } from "@/lib/format";
 import { type Conflicts, isUp, projectCount } from "@/lib/grouping";
@@ -133,9 +133,10 @@ function Attention({ items, machines, onTab }: { items: AttentionItem[]; machine
   );
 }
 
-/** A labelled bar; amber from 80%, red from 90%. */
+/** A labelled bar, coloured by usageLevel: amber from 80%, red from 90%. */
 function Meter({ label, ratio, value }: { label: string; ratio: number; value: string }) {
-  const tone = ratio >= 0.9 ? "bg-destructive" : ratio >= 0.8 ? "bg-amber-500" : "bg-emerald-500";
+  const level = usageLevel(ratio);
+  const tone = level === "error" ? "bg-destructive" : level === "warn" ? "bg-amber-500" : "bg-emerald-500";
   return (
     <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 text-xs">
       <span className="text-muted-foreground">{label}</span>

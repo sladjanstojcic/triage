@@ -1,5 +1,3 @@
-"use client";
-
 /** Table cell building blocks shared by every view. */
 import { ArrowRightIcon, CheckIcon, CopyIcon, ExternalLinkIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
@@ -51,7 +49,7 @@ export function TunnelLinks({ links }: { links: { remotePort: number; tunnel: Po
   return (
     <div className="space-y-0.5">
       {links.map(({ remotePort, tunnel }) => {
-        const via = tunnel.owner.split(" → ")[0];
+        const via = tunnel.sshTarget ?? tunnel.owner;
         return (
           <div key={`${tunnel.pid}-${tunnel.port}`} className="flex flex-wrap items-center gap-x-1.5 text-xs">
             <PortLink
@@ -128,7 +126,6 @@ export function CopyPath({ path, className }: { path?: string; className?: strin
   );
 }
 
-/** Full command line, wrapped (no truncation): the whole point is seeing exactly what's running. */
 /** Roughly two lines in the narrowest column that shows a command; longer ones start clamped. */
 const LONG_COMMAND = 160;
 
@@ -237,7 +234,7 @@ export function ConflictBadge({ row, conflicts }: { row: PortRow; conflicts: Con
 }
 
 /** What a remote listener is: container, or command + folder. */
-export function remoteLabel(l: RemoteListener) {
+function remoteLabel(l: RemoteListener) {
   if (l.container) return `docker ${l.container}`;
   const where = l.cwd ? tildify(l.cwd) : "";
   return [l.command?.split(" ")[0]?.split("/").pop(), where].filter(Boolean).join(" in ") || l.process || "unknown process";

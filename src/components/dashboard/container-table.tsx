@@ -1,5 +1,3 @@
-"use client";
-
 import { ArrowRightIcon } from "lucide-react";
 import type { ContainerPort, ContainerSummary, PortRow } from "@/lib/collect/types";
 import { count } from "@/lib/format";

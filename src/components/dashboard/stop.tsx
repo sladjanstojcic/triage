@@ -1,23 +1,13 @@
-"use client";
-
-import { Loader2Icon, PlayIcon, RotateCcwIcon, SquareIcon, UnplugIcon, XIcon } from "lucide-react";
-import { createContext, use, useState, useTransition } from "react";
+import { PlayIcon, RotateCcwIcon, SquareIcon, UnplugIcon, XIcon } from "lucide-react";
+import { createContext, use, useState } from "react";
 import { toast } from "sonner";
-import { type ContainerAction, containerAction, stopProcess, stopRemoteProcess } from "@/lib/api";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { containerAction, stopProcess, stopRemoteProcess } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import type { ContainerSummary, LocalProcess, PortRow, RemoteListener } from "@/lib/collect/types";
+import type { ContainerAction, ContainerSummary, LocalProcess, PortRow, RemoteListener } from "@/lib/collect/types";
 import { tildify } from "@/lib/format";
 import { isUp } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "./confirm";
 
 /** Lets any action button trigger an immediate re-scan after it acts. */
 export const RefreshContext = createContext<() => void>(() => {});
@@ -58,20 +48,16 @@ function ActionButton({
 }) {
   const refresh = use(RefreshContext);
   const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
 
-  const act = (forced: boolean) =>
-    startTransition(async () => {
-      const res = await run(forced);
-      if (res.error) {
-        toast.error(res.error);
-        return;
-      }
+  const act = (forced: boolean) => async () => {
+    const res = await run(forced);
+    if (!res.error) {
       toast.success(done(forced));
-      setOpen(false);
       // give the process or container a moment to change state before re-scanning
       setTimeout(refresh, 600);
-    });
+    }
+    return res;
+  };
 
   return (
     <>
@@ -84,25 +70,16 @@ function ActionButton({
           <Icon className={cn(filled && "fill-current")} />
         </Button>
       )}
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{title}</AlertDialogTitle>
-            <AlertDialogDescription render={<div />}>{description}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            {force && (
-              <Button variant="outline" disabled={pending} onClick={() => act(true)} title="SIGKILL: no cleanup">
-                Force kill
-              </Button>
-            )}
-            <Button variant={destructive ? "destructive" : "default"} disabled={pending} onClick={() => act(false)}>
-              {pending && <Loader2Icon className="animate-spin" />} {confirmLabel}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={title}
+        description={description}
+        confirmLabel={confirmLabel}
+        destructive={destructive}
+        onConfirm={act(false)}
+        secondary={force ? { label: "Force kill", title: "SIGKILL: no cleanup", onConfirm: act(true) } : undefined}
+      />
     </>
   );
 }
@@ -180,7 +157,7 @@ export function PortStop({ row, procs }: { row: PortRow; procs: Map<number, Loca
       <SshStop
         pid={row.pid}
         stopPid={row.stopPid}
-        target={row.owner.split(" → ")[0]}
+        target={row.sshTarget ?? row.owner}
         note={`Every forward on this connection closes, not just :${row.port}.`}
       />
     );
@@ -272,14 +249,16 @@ export function ContainerActionButton({
 
 /** A container row's actions: Restart and Stop while it's up, Start once it's stopped. */
 export function ContainerRowActions({ container: c, host }: { container: ContainerSummary; host?: RemoteHostRef }) {
-  return isUp(c) ? (
+  return (
     <div className="flex justify-end">
-      <ContainerActionButton action="restart" containers={[c]} host={host} />
-      <ContainerActionButton action="stop" containers={[c]} host={host} />
-    </div>
-  ) : (
-    <div className="flex justify-end">
-      <ContainerActionButton action="start" containers={[c]} host={host} />
+      {isUp(c) ? (
+        <>
+          <ContainerActionButton action="restart" containers={[c]} host={host} />
+          <ContainerActionButton action="stop" containers={[c]} host={host} />
+        </>
+      ) : (
+        <ContainerActionButton action="start" containers={[c]} host={host} />
+      )}
     </div>
   );
 }

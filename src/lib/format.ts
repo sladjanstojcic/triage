@@ -20,15 +20,26 @@ export function isExposed(address: string) {
   return address === "*" || address === "0.0.0.0" || address === "::";
 }
 
+/** localhost, 127.x or ::1. */
+export function isLoopback(host: string) {
+  return host === "localhost" || host.startsWith("127.") || host === "::1";
+}
+
 /** Wildcard/loopback binds are reachable as localhost. */
 export function localUrl(address: string, port: number) {
   const host =
-    isExposed(address) || address.startsWith("127.") || address === "::1"
+    isExposed(address) || isLoopback(address)
       ? "localhost"
       : address.includes(":")
         ? `[${address}]`
         : address;
   return `http://${host}:${port}`;
+}
+
+/** The search box: does any text in `value` contain `query`, ignoring case? An empty query matches. */
+export function matches(value: unknown, query: string) {
+  const needle = query.trim().toLowerCase();
+  return !needle || JSON.stringify(value).toLowerCase().includes(needle);
 }
 
 /** "1 port" / "3 ports" / "" for zero */

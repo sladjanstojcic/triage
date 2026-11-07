@@ -3,7 +3,7 @@ import { run } from "@/lib/exec";
 import { SSH_TARGET_RE } from "@/lib/ssh-target";
 import { probeRemote } from "@/lib/collect/remote";
 import { collectSnapshot } from "@/lib/collect/snapshot";
-import type { ContainerSummary } from "@/lib/collect/types";
+import type { ContainerAction, ContainerSummary } from "@/lib/collect/types";
 import { isUp } from "@/lib/grouping";
 
 export async function addRemoteHost(sshTarget: string, name?: string): Promise<{ error?: string }> {
@@ -43,8 +43,6 @@ export async function stopProcess(pid: number, force = false): Promise<{ error?:
     return { error: code === "EPERM" ? `No permission to stop pid ${pid} (owned by another user)` : String(e) };
   }
 }
-
-export type ContainerAction = "start" | "stop" | "restart";
 
 /** Which containers an action applies to: stop and restart need it up, start needs it stopped. */
 function actionable(action: ContainerAction, containers: ContainerSummary[], ids: string[]) {

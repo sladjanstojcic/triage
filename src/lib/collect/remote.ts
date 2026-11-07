@@ -1,9 +1,10 @@
 import { run } from "@/lib/exec";
 import { SSH_TARGET_RE } from "@/lib/ssh-target";
-import { DEV_CLI, parseAddr } from "./local";
-import { describeOrigin, ORIGIN_ENV, parseOriginEnv, processChain, type ProcRow } from "./origin";
+import { parseAddr } from "./local";
+import { sshConfig } from "./ssh";
+import { describeOrigin, ORIGIN_ENV, parseOriginEnv, processChain, type ProcRow, stopPidFor } from "./origin";
 import { visibleContainers } from "@/lib/grouping";
-import { parseDockerDf } from "./machine";
+import { DOCKER_DF_MS, parseDockerDf } from "./machine";
 import type { ContainerPort, ContainerSummary, DockerDiskRow, MachineInfo, ProjectInfo, RemoteListener, RemoteSnapshot } from "./types";
 
 
@@ -47,9 +48,8 @@ const PROBE_BODY = [
   ].join("; "),
 ].join("; ");
 
-// `docker system df` takes over a second, so a host runs it every couple of minutes; between runs the
-// last result is reused.
-const DOCKER_DF_MS = 2 * 60_000;
+// `docker system df` takes over a second, so a host runs it every DOCKER_DF_MS; between runs the last
+// result is reused.
 const dockerDfCache = new Map<string, { at: number; rows?: DockerDiskRow[] }>();
 const DOCKER_DF = `echo '##DOCKERDF'; docker system df --format '{{json .}}' 2>/dev/null || S docker system df --format '{{json .}}' 2>/dev/null`;
 
@@ -135,13 +135,6 @@ export function parseStackFolders(lines: string[]): Map<string, ProjectInfo> {
 
 const UNIT_MS: Record<string, number> = { second: 1e3, minute: 6e4, hour: 36e5, day: 864e5, week: 6048e5, month: 2592e6, year: 31536e6 };
 
-/** Same rule as this Mac: stop the dev CLI (`next dev`) rather than the server it spawned, so it can't respawn. */
-export function remoteStopPid(pid: number, table: Map<number, ProcRow>): number {
-  const row = table.get(pid);
-  const parent = row ? table.get(row.ppid) : undefined;
-  return parent && parent.pid > 1 && DEV_CLI.test(parent.command) && !DEV_CLI.test(row!.command) ? parent.pid : pid;
-}
-
 /**
  * When a container stopped, from docker's status text ("Exited (0) 2 hours ago", "Exited (1) About an hour
  * ago"); `docker ps` has no timestamp. Approximate, which is enough for "stopped in the last day".
@@ -168,9 +161,9 @@ export async function probeRemote(host: { id: number; name: string; sshTarget: s
   const script = `${sudoLine(host.sshTarget)}; ${PROBE_BODY}${dfDue ? `; ${DOCKER_DF}` : ""}`;
   const [res, cfg] = await Promise.all([
     run("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=6", host.sshTarget, script], 15000),
-    run("ssh", ["-G", host.sshTarget], 3000),
+    sshConfig(host.sshTarget),
   ]);
-  const resolvedHost = cfg.stdout.match(/^hostname (.+)$/m)?.[1];
+  const resolvedHost = cfg.hostname;
   if (!res.stdout.includes("##HOST")) {
     return { ...base, resolvedHost, ok: false, error: res.stderr.trim().split("\n").pop() || "ssh failed" };
   }
@@ -248,7 +241,7 @@ export async function probeRemote(host: { id: number; name: string; sshTarget: s
       system,
       ...(pid ? procs.get(pid) : {}),
       origin: pid && !container && !system ? originOf(pid) : undefined,
-      stopPid: pid && !container && !system ? remoteStopPid(pid, table) : undefined,
+      stopPid: pid && !container && !system ? stopPidFor(pid, table) : undefined,
     });
   }
 
@@ -264,7 +257,6 @@ export async function probeRemote(host: { id: number; name: string; sshTarget: s
     uptime: s.HOST?.[1]?.trim(),
     rootView,
     listeners: listeners.sort((a, b) => a.port - b.port),
-    // same order as the local collector: by stack, then name
-    containers: visibleContainers(containers).sort((a, b) => (a.group ?? "~").localeCompare(b.group ?? "~") || a.name.localeCompare(b.name)),
+    containers: visibleContainers(containers),
   };
 }
