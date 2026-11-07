@@ -1,8 +1,8 @@
 # Triage
 
-**One local page that shows everything running on your Mac (and your dev servers) while you juggle several projects at once.**
+**One local page that shows everything running on your Mac and your remote dev servers while you juggle several projects at once.**
 
-Every listening port, dev server, Docker container, SSH tunnel and remote host, grouped by the project folder it belongs to, with who started it and a one-click stop button.
+Every listening port, dev server, Docker container, SSH tunnel and remote host, grouped by the project folder it belongs to, with who started it and stop buttons that ask before acting.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/overview-light.png">
@@ -35,13 +35,13 @@ Every listening port grouped by project folder, with git branch, worktree badge 
 
 ### Ports
 
-A flat table of every listening TCP port and what owns it: a process, a Docker or Supabase container (mapped through Docker Desktop or OrbStack), or an SSH `-L` forward.
+A flat table of every listening TCP port and what owns it: a process, a Docker or Supabase container (mapped through Docker Desktop or OrbStack), or an SSH `-L` forward. System services stay hidden until you click **Show system**.
 
 ![Ports tab: every listening port with its type, command line and project folder](docs/screenshots/ports.png)
 
 ### Docker
 
-Running containers grouped by compose or Supabase CLI project, linked to the project folder, with restart and stop per container or per stack.
+Containers grouped by compose or Supabase CLI project, linked to the project folder. Running containers can be restarted or stopped, one at a time or a whole stack at once. Stopped containers stay listed with a start button when their stack is still running or they stopped in the last 24 hours.
 
 ![Docker tab: a Supabase stack's containers with image, health and port mappings](docs/screenshots/docker.png)
 
@@ -53,33 +53,33 @@ Outgoing `ssh`/`autossh` connections with their forwards (including ones from `~
 
 ### Remote
 
-VPS hosts you add by SSH alias, probed every 30 seconds over SSH (`ss`, `/proc/<pid>/cwd`, `docker ps`, `git`). It uses passwordless `sudo -n` when available, so root-owned services are named too. Containers get the same table as the Docker tab, and local SSH tunnel ports show which remote service they reach.
+VPS hosts you add by SSH alias, probed every 30 seconds over SSH (`ss`, `/proc`, `df`, `docker ps`, `git`). It uses passwordless `sudo -n` when available, so root-owned services are named too. Containers get the same table as the Docker tab, dev servers can be stopped like local ones, and an SSH tunnel column shows which local port reaches each remote service.
 
 ![Remote tab: a VPS's listening ports with process, folder and the local SSH tunnel that reaches each one](docs/screenshots/remote.png)
 
 ### Stop things safely
 
-The ■ buttons (always with a confirmation) can:
+Every action asks for confirmation first:
 
-- SIGTERM or force-kill a dev server: the `next dev`/`vite` CLI, not just its worker
-- disconnect an SSH tunnel: the `autossh` supervisor too, so it doesn't reconnect
-- stop a tunnel client
-- `docker stop` a container or a whole compose/Supabase group
+- **✕ kill** a dev server (SIGTERM, or SIGKILL with *Force kill*): the `next dev`/`vite` CLI, not just its worker; also tunnel clients such as `cloudflared` or `ngrok`
+- **disconnect** an SSH tunnel: the `autossh` supervisor too, so it doesn't reconnect
+- **■ stop**, **▶ start** or **↻ restart** a container, or stop and start a whole compose/Supabase stack
 
 This works locally and on remote hosts (over SSH, with `sudo -n` if needed). The server re-checks every target against a fresh scan before acting, and never stops system processes or itself.
 
 ## Requirements
 
 - **macOS** (uses `lsof` and `ps`)
-- **Node.js 20.11+** and **pnpm**
+- **Node.js 20.19+ or 22.12+** (required by Vite 8)
+- **pnpm 12** (pinned in `package.json`): `npm install -g pnpm@12`, or `corepack enable` if your Node ships Corepack
 - Optional: Docker Desktop or OrbStack, Tailscale, SSH. Anything missing is skipped.
 - Remote hosts: Linux with `ss`, reachable with key-based SSH auth
 
 ## Getting started
 
 ```bash
-git clone <this repo>
-cd triage-app
+git clone https://github.com/sladjanstojcic/triage.git
+cd triage
 pnpm install
 pnpm dev
 ```
@@ -122,7 +122,7 @@ Don't expose it through a tunnel or reverse proxy.
 
 ## Tech stack
 
-React 19, Vite, Tailwind CSS 4 and shadcn/ui (Base UI) in the browser. A small Node HTTP server (`src/server`) collects data with `lsof`, `ps`, `docker`, `git`, `ssh` and `tailscale`.
+React 19, Vite, Tailwind CSS 4 and shadcn/ui (Base UI) in the browser. A small Node HTTP server (`src/server`) collects data with `lsof`, `ps`, `sysctl`, `vm_stat`, `df`, `docker`, `git`, `ssh` and `tailscale`.
 
 ## License
 
