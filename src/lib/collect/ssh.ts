@@ -7,7 +7,7 @@ const WITH_ARG = new Set("BbcDEeFIiJLlmOoPpQRSWwM".split(""));
 
 type Parsed = { target?: string; opts: Map<string, string[]> };
 
-export function parseSshArgs(tokens: string[]): Parsed {
+function parseSshArgs(tokens: string[]): Parsed {
   const opts = new Map<string, string[]>();
   const add = (k: string, v: string) => opts.set(k, [...(opts.get(k) ?? []), v]);
   for (let i = 0; i < tokens.length; i++) {
@@ -65,6 +65,7 @@ export function sshConfig(target: string, opts = new Map<string, string[]>()) {
   const hit = sshConfigCache.get(key);
   if (hit && Date.now() - hit.at < SSH_CONFIG_TTL_MS) return hit.cfg;
   const cfg = readSshConfig(args);
+  for (const [k, v] of sshConfigCache) if (Date.now() - v.at >= SSH_CONFIG_TTL_MS) sshConfigCache.delete(k);
   sshConfigCache.set(key, { at: Date.now(), cfg });
   return cfg;
 }

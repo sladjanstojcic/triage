@@ -10,6 +10,8 @@ export const TABS = [
 
 export type Tab = (typeof TABS)[number]["id"];
 
+export const tabLabel = (tab: Tab) => TABS.find((t) => t.id === tab)?.label ?? tab;
+
 export function tabFromPath(pathname: string): Tab {
   const id = pathname.split("/")[1];
   return TABS.find((t) => t.id === id)?.id ?? "overview";

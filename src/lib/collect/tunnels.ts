@@ -77,8 +77,17 @@ type TsStatus = {
   Peer?: Record<string, { HostName: string; DNSName: string; TailscaleIPs: string[]; OS: string; Online: boolean }>;
 };
 
-/** Tailscale serve/funnel mappings, plus the tailnet peers (often where the VPS lives). */
-export async function collectTailscale(): Promise<{ tunnels: Tunnel[]; status?: { self: string; peers: TailscalePeer[] } }> {
+// The two tailscale CLI calls cost ~300 ms together, and serve config and peers rarely change.
+const TAILSCALE_TTL_MS = 15_000;
+let tailscale: { at: number; result: ReturnType<typeof readTailscale> } | undefined;
+
+/** Tailscale serve/funnel mappings, plus the tailnet peers (often where the VPS lives); at most 15 s old. */
+export function collectTailscale() {
+  if (!tailscale || Date.now() - tailscale.at >= TAILSCALE_TTL_MS) tailscale = { at: Date.now(), result: readTailscale() };
+  return tailscale.result;
+}
+
+async function readTailscale(): Promise<{ tunnels: Tunnel[]; status?: { self: string; peers: TailscalePeer[] } }> {
   const [statusRes, serveRes] = await Promise.all([
     run("tailscale", ["status", "--json"], 3000),
     run("tailscale", ["serve", "status", "--json"], 3000),

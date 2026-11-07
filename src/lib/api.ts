@@ -16,7 +16,7 @@ async function post(url: string, body: unknown): Promise<{ error?: string }> {
   }
 }
 
-export const addRemoteHost = (sshTarget: string, name?: string) => post("/api/hosts", { sshTarget, name });
+export const addRemoteHost = (sshTarget: string) => post("/api/hosts", { sshTarget });
 export const removeRemoteHost = (id: number) => post("/api/hosts/remove", { id });
 export const stopProcess = (pid: number, force = false) => post("/api/stop", { pid, force });
 /** docker start / stop / restart, on this Mac or (with hostId) on a remote host */

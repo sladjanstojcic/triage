@@ -97,7 +97,7 @@ const TECH: [RegExp, string][] = [
   [/\bnode\b|\/node /, "Node"],
 ];
 
-export function detectTech(text: string): string | undefined {
+function detectTech(text: string): string | undefined {
   for (const [re, label] of TECH) if (re.test(text)) return label;
   return undefined;
 }
@@ -130,6 +130,7 @@ export async function projectFor(dir: string | undefined): Promise<ProjectInfo |
   if (hit && Date.now() - hit.at < PROJECT_TTL_MS) return hit.info;
   // the pending lookup is cached, so containers and processes in one folder share a single git call
   const info = lookupProject(dir);
+  for (const [k, v] of projectCache) if (Date.now() - v.at >= PROJECT_TTL_MS) projectCache.delete(k);
   projectCache.set(dir, { at: Date.now(), info });
   return info;
 }
@@ -221,8 +222,9 @@ function launchEnv(chain: { pid: number }[], envs: Map<number, Record<string, st
 }
 
 /** Every process with a listening TCP socket, enriched with its folder, project and who started it. */
-export async function collectListeningProcesses(ps: Map<number, PsRow>): Promise<{ procs: LocalProcess[]; error?: string }> {
-  const res = await run("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"]);
+export async function collectListeningProcesses(psRows: Promise<Map<number, PsRow>>): Promise<{ procs: LocalProcess[]; error?: string }> {
+  // lsof doesn't need ps, so both run at once
+  const [res, ps] = await Promise.all([run("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"]), psRows]);
   // lsof exits 1 when it finds nothing; treat empty output as "no listeners", not an error.
   if (!res.ok && !res.stdout) return { procs: [], error: res.stderr.trim() || undefined };
   const listeners = parseLsofFields(res.stdout);

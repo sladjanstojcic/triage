@@ -5,9 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RemoteSnapshot, Snapshot } from "@/lib/collect/types";
 import { matches } from "@/lib/format";
-import { TABS, type Tab, tabFromPath } from "@/lib/tabs";
+import { TABS, type Tab, tabFromPath, tabLabel } from "@/lib/tabs";
 import { cn } from "@/lib/utils";
-import { containerGroups, findConflicts, groupByProject, isUp, projectCount, sshMachines } from "@/lib/grouping";
+import { containerGroups, findConflicts, groupByProject, isUp, projectCount, sshMachines, visiblePorts } from "@/lib/grouping";
 import { AddHostSheet } from "./add-host-sheet";
 import { CollapseContext, groupKey } from "./grouped-table";
 import { RefreshContext } from "./stop";
@@ -65,7 +65,7 @@ export function Dashboard() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   useEffect(() => {
-    document.title = `${TABS.find((t) => t.id === tab)?.label} · Triage`;
+    document.title = `${tabLabel(tab)} · Triage`;
   }, [tab]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [remote, setRemote] = useState<RemoteSnapshot[]>();
@@ -140,8 +140,7 @@ export function Dashboard() {
           </div>
           {snap && (
             <div className="flex flex-wrap gap-x-5 gap-y-1">
-              {/* same rows as the Ports tab: system listeners count only while "Show system" is on */}
-              <Stat label="port" value={snap.ports.filter((p) => showSystem || !p.system).length} />
+              <Stat label="port" value={visiblePorts(snap, showSystem).length} />
               <Stat label="project" value={projectCount(snap)} />
               <Stat label="container" value={snap.containers.filter(isUp).length} />
               <Stat label="ssh" plural="ssh" value={snap.ssh.length} />

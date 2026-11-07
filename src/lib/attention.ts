@@ -4,7 +4,7 @@
  */
 import type { MachineInfo, RemoteSnapshot, Snapshot, Usage } from "@/lib/collect/types";
 import { formatBytes, isExposed } from "@/lib/format";
-import { type Conflicts, isUp } from "@/lib/grouping";
+import { type Conflicts, isUnhealthy, isUp, portOwnerName } from "@/lib/grouping";
 import type { Tab } from "@/lib/tabs";
 
 
@@ -74,7 +74,7 @@ export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefi
       level: "error",
       machine: mac,
       text: `:${port} is bound by ${rows.length} processes`,
-      detail: rows.map((r) => r.project?.subpath ?? r.project?.name ?? r.processName).join(", "),
+      detail: rows.map(portOwnerName).join(", "),
       tab: "projects",
     });
   }
@@ -102,7 +102,7 @@ export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefi
     items.push({ key: `${mac}:missing:${root}`, level: "warn", machine: mac, text: `${name} runs from a deleted folder`, tab: "projects" });
   }
   for (const c of snap.containers) {
-    if (c.health && c.health !== "healthy") {
+    if (isUnhealthy(c)) {
       items.push({ key: `${mac}:health:${c.id}`, level: "error", machine: mac, text: `${c.name} is ${c.health}`, tab: "docker" });
     }
   }
@@ -143,7 +143,7 @@ export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefi
       items.push({ key: `${h.name}:missing:${stack}`, level: "warn", machine: h.name, text: `${stack} runs from a deleted folder`, tab: "remote" });
     }
     for (const c of h.containers) {
-      if (c.health && c.health !== "healthy") {
+      if (isUnhealthy(c)) {
         items.push({ key: `${h.name}:health:${c.id}`, level: "error", machine: h.name, text: `${c.name} is ${c.health}`, tab: "remote" });
       }
     }
@@ -158,7 +158,7 @@ export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefi
 function reclaimItem(rows: Snapshot["dockerDisk"], machine: string, m: MachineInfo | undefined, tab: Tab): AttentionItem[] {
   const reclaim = (rows ?? []).reduce((sum, r) => sum + r.reclaimable, 0);
   if (reclaim < RECLAIM_NOTE) return [];
-  const diskTight = !!m?.disk && pct(m.disk) >= 0.8;
+  const diskTight = !!m?.disk && !!usageLevel(pct(m.disk));
   return [
     {
       key: `${machine}:reclaim`,

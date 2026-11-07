@@ -152,6 +152,14 @@ const LINUX_SYSTEM = new Set([
   "cupsd", "dnsmasq", "avahi-daemon", "containerd", "dockerd", "exim4", "master", "snapd",
 ]);
 
+// docker ps status suffix: "Up 2 days (healthy)", "(health: starting)"
+const HEALTH = /\s*\((healthy|unhealthy|health: starting)\)/;
+
+/** Run a command on a host over ssh without prompting; a host that doesn't answer in 6 s fails. */
+export function sshRun(sshTarget: string, command: string, timeoutMs: number) {
+  return run("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=6", sshTarget, command], timeoutMs);
+}
+
 export async function probeRemote(host: { id: number; name: string; sshTarget: string }): Promise<RemoteSnapshot> {
   const base = { id: host.id, name: host.name, sshTarget: host.sshTarget, at: new Date().toISOString(), listeners: [], containers: [] };
   if (!SSH_TARGET_RE.test(host.sshTarget)) return { ...base, ok: false, error: "invalid ssh target" };
@@ -160,7 +168,7 @@ export async function probeRemote(host: { id: number; name: string; sshTarget: s
   const dfDue = !df || Date.now() - df.at >= DOCKER_DF_MS;
   const script = `${sudoLine(host.sshTarget)}; ${PROBE_BODY}${dfDue ? `; ${DOCKER_DF}` : ""}`;
   const [res, cfg] = await Promise.all([
-    run("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=6", host.sshTarget, script], 15000),
+    sshRun(host.sshTarget, script, 15000),
     sshConfig(host.sshTarget),
   ]);
   const resolvedHost = cfg.hostname;
@@ -201,14 +209,14 @@ export async function probeRemote(host: { id: number; name: string; sshTarget: s
     const [name, image, status, ports, compose, supabase, supabaseDir, composeDir, id, state] = line.split("\t");
     const workdir = supabaseDir || composeDir || undefined;
     // "Up 2 days (healthy)" → status "Up 2 days", health "healthy", like the local collector
-    const health = status.match(/\((healthy|unhealthy|health: starting)\)/)?.[1]?.replace("health: ", "");
+    const health = status.match(HEALTH)?.[1]?.replace("health: ", "");
     return {
       id,
       name,
       image,
       state: state || "running",
       stoppedAt: state && state !== "running" ? stoppedAt(status) : undefined,
-      status: status.replace(/\s*\((?:healthy|unhealthy|health: starting)\)/, ""),
+      status: status.replace(HEALTH, ""),
       health,
       ports: parseDockerPorts(ports ?? ""),
       group: supabase || compose || undefined,

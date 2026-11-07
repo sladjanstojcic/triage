@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Origin, PortRow, ProjectInfo, RemoteListener, RemoteSnapshot } from "@/lib/collect/types";
 import { isExposed, localUrl, shortCommand, tildify } from "@/lib/format";
-import { type Conflicts, remoteTarget } from "@/lib/grouping";
+import { type Conflicts, portOwnerName, remoteTarget } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
 
 /** A port on this Mac that opens in the browser; `tunnel` draws it in the SSH tunnel colour. */
@@ -225,10 +225,9 @@ export function TechBadge({ tech }: { tech?: string }) {
 export function ConflictBadge({ row, conflicts }: { row: PortRow; conflicts: Conflicts }) {
   const others = conflicts.get(row.port)?.filter((o) => o.pid !== row.pid);
   if (!others?.length) return null;
-  const name = (o: PortRow) => o.project?.subpath ?? o.project?.name ?? o.processName;
   return (
     <Badge variant="destructive" className="mb-0.5 h-auto whitespace-normal">
-      <TriangleAlertIcon /> :{row.port} also bound by {others.map((o) => `${name(o)} (pid ${o.pid})`).join(", ")}
+      <TriangleAlertIcon /> :{row.port} also bound by {others.map((o) => `${portOwnerName(o)} (pid ${o.pid})`).join(", ")}
     </Badge>
   );
 }
