@@ -63,15 +63,15 @@ Every action asks for confirmation first:
 
 - **✕ kill** a dev server (SIGTERM, or SIGKILL with *Force kill*): the `next dev`/`vite` CLI, not just its worker; also tunnel clients such as `cloudflared` or `ngrok`
 - **disconnect** an SSH tunnel: the `autossh` supervisor too, so it doesn't reconnect
-- **■ stop**, **▶ start** or **↻ restart** a container, or stop and start a whole compose/Supabase stack
+- **■ stop**, **▶ start** or **↺ restart** a container, or stop and start a whole compose/Supabase stack
 
 This works locally and on remote hosts (over SSH, with `sudo -n` if needed). The server re-checks every target against a fresh scan before acting, and never stops system processes or itself.
 
 ## Requirements
 
 - **macOS** (uses `lsof` and `ps`)
-- **Node.js 20.19+ or 22.12+** (required by Vite 8)
-- **pnpm 12** (pinned in `package.json`): `npm install -g pnpm@12`, or `corepack enable` if your Node ships Corepack
+- **Node.js 20.19+ (not 21) or 22.12+** (required by Vite 8)
+- **pnpm 12** (pinned in `package.json`): `npm install -g pnpm@12`
 - Optional: Docker Desktop or OrbStack, Tailscale, SSH. Anything missing is skipped.
 - Remote hosts: Linux with `ss`, reachable with key-based SSH auth
 
@@ -122,7 +122,7 @@ Don't expose it through a tunnel or reverse proxy.
 
 ## Tech stack
 
-React 19, Vite, Tailwind CSS 4 and shadcn/ui (Base UI) in the browser. A small Node HTTP server (`src/server`) collects data with `lsof`, `ps`, `sysctl`, `vm_stat`, `df`, `docker`, `git`, `ssh` and `tailscale`.
+React 19, Vite, Tailwind CSS 4 and shadcn/ui (Base UI) in the browser. A small Node HTTP server (`src/server`) collects data with `lsof`, `ps`, `sysctl`, `vm_stat`, `df`, `pmset`, `docker`, `git`, `ssh` and `tailscale`.
 
 ## License
 
