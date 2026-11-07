@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseDockerPorts, parseLinuxMachine, parseStackFolders, remoteStopPid, stoppedAt } from "./remote";
+import { parseDockerPorts, parseLinuxMachine, parseStackFolders, stoppedAt } from "./remote";
 
 test("parseDockerPorts: published only, IPv6 twin dropped, sorted", () => {
   assert.deepEqual(parseDockerPorts("8080/tcp, [::]:58322->5432/tcp, 0.0.0.0:58322->5432/tcp, 127.0.0.1:55121->8000/tcp"), [
@@ -73,16 +73,4 @@ test("stoppedAt: docker's relative exit times", () => {
   assert.equal(stoppedAt("Exited (1) About an hour ago", now), "2026-11-07T11:00:00.000Z");
   assert.equal(stoppedAt("Exited (143) 4 days ago", now), "2026-11-03T12:00:00.000Z");
   assert.equal(stoppedAt("Created", now), undefined);
-});
-
-test("remoteStopPid: the dev CLI that spawned the server, else the pid itself", () => {
-  const table = new Map(
-    [
-      { pid: 10, ppid: 1, command: "node /srv/app/node_modules/.bin/next dev --port=3001" },
-      { pid: 11, ppid: 10, command: "next-server (v16.1.6)" },
-      { pid: 20, ppid: 1, command: "python3 -m http.server 19090" },
-    ].map((r) => [r.pid, r]),
-  );
-  assert.equal(remoteStopPid(11, table), 10);
-  assert.equal(remoteStopPid(20, table), 20);
 });

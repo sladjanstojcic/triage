@@ -15,7 +15,7 @@ const TUNNEL_BINARIES: [RegExp, string][] = [
 
 async function getJson<T>(url: string): Promise<T | undefined> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(1500), cache: "no-store" });
+    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
     return res.ok ? ((await res.json()) as T) : undefined;
   } catch {
     return undefined;
@@ -41,17 +41,17 @@ export async function collectTunnels(ps: Map<number, PsRow>, listening: LocalPro
     if (kind === "cloudflared") {
       t.target = argAfter(r.command, "--url");
       // quick tunnels expose their public hostname on the metrics server
-      for (const port of ports) {
-        const q = await getJson<{ hostname?: string }>(`http://127.0.0.1:${port}/quicktunnel`);
-        if (q?.hostname) t.publicUrl = `https://${q.hostname}`;
-      }
+      const answers = await Promise.all(ports.map((port) => getJson<{ hostname?: string }>(`http://127.0.0.1:${port}/quicktunnel`)));
+      for (const q of answers) if (q?.hostname) t.publicUrl = `https://${q.hostname}`;
       tunnels.push(t);
     } else if (kind === "ngrok") {
       let found = false;
-      for (const port of ports) {
-        const api = await getJson<{ tunnels: { public_url: string; config: { addr: string } }[] }>(
-          `http://127.0.0.1:${port}/api/tunnels`,
-        );
+      const apis = await Promise.all(
+        ports.map((port) =>
+          getJson<{ tunnels: { public_url: string; config: { addr: string } }[] }>(`http://127.0.0.1:${port}/api/tunnels`),
+        ),
+      );
+      for (const api of apis) {
         for (const nt of api?.tunnels ?? []) {
           found = true;
           tunnels.push({ ...t, publicUrl: nt.public_url, target: nt.config.addr });

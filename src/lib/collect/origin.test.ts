@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describeOrigin, parseOriginEnv, processChain, type ProcRow } from "./origin";
+import { describeOrigin, parseOriginEnv, processChain, type ProcRow, stopPidFor } from "./origin";
 
 const table = (rows: [number, number, string, string][]) =>
   new Map(rows.map(([pid, ppid, tty, command]): [number, ProcRow] => [pid, { pid, ppid, tty, command }]));
@@ -90,4 +90,16 @@ test("Linux: VS Code remote server", () => {
 
 test("nothing known: no origin", () => {
   assert.equal(origin([[10, 1, "ttys001", "python3 -m http.server"]], 10), undefined);
+});
+
+test("stopPidFor: the dev CLI that spawned the server, else the pid itself", () => {
+  const table = new Map(
+    [
+      { pid: 10, ppid: 1, command: "node /srv/app/node_modules/.bin/next dev --port=3001" },
+      { pid: 11, ppid: 10, command: "next-server (v16.1.6)" },
+      { pid: 20, ppid: 1, command: "python3 -m http.server 19090" },
+    ].map((r) => [r.pid, r]),
+  );
+  assert.equal(stopPidFor(11, table), 10);
+  assert.equal(stopPidFor(20, table), 20);
 });

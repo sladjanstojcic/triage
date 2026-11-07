@@ -1,11 +1,10 @@
-"use client";
-
 import { ActivityIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, PauseIcon, PlayIcon, PlusIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RemoteSnapshot, Snapshot } from "@/lib/collect/types";
+import { matches } from "@/lib/format";
 import { TABS, type Tab, tabFromPath } from "@/lib/tabs";
 import { cn } from "@/lib/utils";
 import { containerGroups, findConflicts, groupByProject, isUp, projectCount, sshMachines } from "@/lib/grouping";
@@ -26,9 +25,8 @@ const REMOTE_POLL_MS = 30_000;
 
 /** Keep only the parts of the snapshot whose text matches the search. */
 function filterSnapshot(snap: Snapshot, q: string): Snapshot {
-  const needle = q.trim().toLowerCase();
-  if (!needle) return snap;
-  const hit = (v: unknown) => JSON.stringify(v).toLowerCase().includes(needle);
+  if (!q.trim()) return snap;
+  const hit = (v: unknown) => matches(v, q);
   return {
     ...snap,
     ports: snap.ports.filter(hit),
@@ -77,7 +75,7 @@ export function Dashboard() {
   const loadRemote = useCallback(async () => {
     setRemoteLoading(true);
     try {
-      const res = await fetch("/api/remote", { cache: "no-store" });
+      const res = await fetch("/api/remote");
       if (res.ok) setRemote(await res.json());
     } finally {
       setRemoteLoading(false);
@@ -90,7 +88,7 @@ export function Dashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/snapshot", { cache: "no-store" });
+      const res = await fetch("/api/snapshot");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSnap(await res.json());
       setError(undefined);

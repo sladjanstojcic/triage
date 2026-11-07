@@ -98,16 +98,18 @@ export const isUp = (c: Pick<ContainerSummary, "state">) => c.state === "running
 /**
  * Which containers the Docker tables show: everything up, plus stopped ones worth starting again: members
  * of a stack that still has something running, or anything stopped in the last 24 hours (so a stack you
- * just stopped stays there with its Start buttons). Older leftovers stay out.
+ * just stopped stays there with its Start buttons). Older leftovers stay out. Sorted by stack, then name.
  */
 export function visibleContainers<C extends ContainerSummary>(containers: C[], now = Date.now()): C[] {
   const liveGroups = new Set(containers.filter(isUp).map((c) => c.group).filter(Boolean));
-  return containers.filter(
-    (c) =>
-      isUp(c) ||
-      (!!c.group && liveGroups.has(c.group)) ||
-      (!!c.stoppedAt && now - Date.parse(c.stoppedAt) < STOPPED_SHOWN_MS),
-  );
+  return containers
+    .filter(
+      (c) =>
+        isUp(c) ||
+        (!!c.group && liveGroups.has(c.group)) ||
+        (!!c.stoppedAt && now - Date.parse(c.stoppedAt) < STOPPED_SHOWN_MS),
+    )
+    .sort((a, b) => (a.group ?? "~").localeCompare(b.group ?? "~") || a.name.localeCompare(b.name));
 }
 
 /** Containers bucketed by compose / Supabase project (standalone containers stand alone). */

@@ -45,6 +45,8 @@ export type LocalProcess = {
   origin?: Origin;
 };
 
+export type ContainerAction = "start" | "stop" | "restart";
+
 export type ContainerPort = { hostIp: string; hostPort: number; containerPort: number; proto: string };
 
 export type Container = {
@@ -123,6 +125,8 @@ export type PortRow = {
   processName: string;
   /** what's actually behind the port: container name, ssh forward target, or process command */
   owner: string;
+  /** for ssh forwards: the ssh target as typed (alias or user@host) */
+  sshTarget?: string;
   /** for ssh forwards: resolved ssh hostname and the port it reaches on that host's loopback */
   sshHost?: string;
   remotePort?: number;
