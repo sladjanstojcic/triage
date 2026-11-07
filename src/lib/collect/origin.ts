@@ -8,7 +8,7 @@ import type { Origin } from "./types";
 export type ProcRow = { pid: number; ppid: number; tty?: string; command: string };
 
 /** Dev CLIs that spawn the actual server (`next dev` → next-server). */
-export const DEV_CLI = /\b(next|nuxt|astro|remix|vite|react-router)\b.*\b(dev|start|preview)\b/;
+const DEV_CLI = /\b(next|nuxt|astro|remix|vite|react-router)\b.*\b(dev|start|preview)\b/;
 
 /** Stop the dev CLI (`next dev`) rather than the server it spawned, so it can't respawn or linger. */
 export function stopPidFor(pid: number, table: Map<number, ProcRow>): number {

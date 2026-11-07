@@ -1,7 +1,7 @@
 import { addHost, listHosts, removeHost } from "@/lib/hosts";
 import { run } from "@/lib/exec";
 import { SSH_TARGET_RE } from "@/lib/ssh-target";
-import { probeRemote } from "@/lib/collect/remote";
+import { probeRemote, sshRun } from "@/lib/collect/remote";
 import { collectSnapshot } from "@/lib/collect/snapshot";
 import type { ContainerAction, ContainerSummary } from "@/lib/collect/types";
 import { isUp } from "@/lib/grouping";
@@ -65,9 +65,7 @@ export async function containerAction(action: ContainerAction, ids: string[]): P
 }
 
 /** Run a fixed command on a remote host over ssh; callers only interpolate validated ids and numbers. */
-function onHost(sshTarget: string, command: string) {
-  return run("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=6", sshTarget, command], 90_000);
-}
+const onHost = (sshTarget: string, command: string) => sshRun(sshTarget, command, 90_000);
 
 async function freshProbe(hostId: number) {
   const host = (await listHosts()).find((h) => h.id === hostId);

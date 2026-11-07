@@ -1,7 +1,7 @@
 import { ArrowRightIcon } from "lucide-react";
 import type { ContainerPort, ContainerSummary, PortRow } from "@/lib/collect/types";
 import { count } from "@/lib/format";
-import { containerGroups, containerTech, shortContainerName } from "@/lib/grouping";
+import { containerGroups, containerTech, isUnhealthy, shortContainerName } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
 import { CopyPath, PortLink, ProjectBadges, TechBadge, TunnelLinks } from "./cells";
 import { type Column, GroupedTable } from "./grouped-table";
@@ -86,7 +86,7 @@ export function ContainerTable({
         <span key="status" className="block text-xs">
           {c.status}
           {c.health && (
-            <span className={cn("block", c.health === "healthy" ? "text-emerald-600 dark:text-emerald-400" : "text-destructive")}>
+            <span className={cn("block", isUnhealthy(c) ? "text-destructive" : "text-emerald-600 dark:text-emerald-400")}>
               {c.health}
             </span>
           )}

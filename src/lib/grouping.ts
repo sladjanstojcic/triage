@@ -35,6 +35,9 @@ export type ProjectGroup = {
   containers: Container[];
 };
 
+/** Projects group by repo root (or name when there is none): the Projects tab and the header count agree. */
+const projectKey = (p: ProjectInfo) => p.root || p.name;
+
 /**
  * Local things you're developing, by folder. SSH forwards are left out on purpose: they have no local
  * folder and are listed on the SSH & Tunnels and Ports tabs.
@@ -47,11 +50,13 @@ export function groupByProject(snap: Snapshot, showSystem: boolean): ProjectGrou
     return g;
   };
 
+  const inProject = (project: ProjectInfo) =>
+    get(projectKey(project), { title: project.name, icon: "folder", project, folder: project.root });
+
   for (const p of snap.ports) {
     if (p.ownerKind !== "process" || (p.system && !showSystem)) continue;
     if (p.project) {
-      const key = p.project.root || p.project.name;
-      get(key, { title: p.project.name, icon: "folder", project: p.project, folder: p.project.root }).ports.push(p);
+      inProject(p.project).ports.push(p);
     } else {
       get(p.system ? "~~system" : "~other", { title: p.system ? "System & apps" : "Other listeners", icon: "other" }).ports.push(p);
     }
@@ -60,8 +65,7 @@ export function groupByProject(snap: Snapshot, showSystem: boolean): ProjectGrou
   for (const c of snap.containers) {
     if (!isUp(c)) continue;
     if (c.project) {
-      const key = c.project.root || c.project.name;
-      get(key, { title: c.project.name, icon: "folder", project: c.project, folder: c.project.root }).containers.push(c);
+      inProject(c.project).containers.push(c);
     } else if (c.workdir) {
       get(c.workdir, { title: c.workdir.split("/").pop() ?? c.workdir, icon: "folder", folder: c.workdir }).containers.push(c);
     } else {
@@ -76,21 +80,30 @@ export function groupByProject(snap: Snapshot, showSystem: boolean): ProjectGrou
 
 /** Project folders with something listening (ports, including container ports). */
 export function projectCount(snap: Snapshot): number {
-  return new Set(snap.ports.filter((p) => p.project).map((p) => p.project!.root || p.project!.name)).size;
+  return new Set(snap.ports.flatMap((p) => (p.project ? [projectKey(p.project)] : []))).size;
 }
 
 // ---------------------------------------------------------------------------
 // Ports
 
+/** The ports shown: system listeners only while "Show system" is on. */
+export const visiblePorts = (snap: Snapshot, showSystem: boolean) => snap.ports.filter((p) => showSystem || !p.system);
+
 /** Every listening port in one list, by port number: the "what is on :4099?" lookup. */
 export function sortedPorts(snap: Snapshot, showSystem: boolean): PortRow[] {
-  return snap.ports.filter((p) => showSystem || !p.system).sort((a, b) => a.port - b.port || a.pid - b.pid);
+  return visiblePorts(snap, showSystem).sort((a, b) => a.port - b.port || a.pid - b.pid);
 }
+
+/** How a port's owner is named in conflict warnings: monorepo app, project, or process name. */
+export const portOwnerName = (p: PortRow) => p.project?.subpath ?? p.project?.name ?? p.processName;
 
 // ---------------------------------------------------------------------------
 // Containers
 
 const STOPPED_SHOWN_MS = 24 * 60 * 60_000;
+
+/** A container reporting any health state other than "healthy" (unhealthy, starting). */
+export const isUnhealthy = (c: Pick<ContainerSummary, "health">) => !!c.health && c.health !== "healthy";
 
 /** A container is up (running, or restarting / paused in place). */
 export const isUp = (c: Pick<ContainerSummary, "state">) => c.state === "running" || c.state === "restarting" || c.state === "paused";

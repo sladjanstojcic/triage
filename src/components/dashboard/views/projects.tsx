@@ -3,7 +3,7 @@ import { Fragment } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { Container, PortRow, Snapshot } from "@/lib/collect/types";
 import { count, humanElapsed } from "@/lib/format";
-import { type Conflicts, containerGroups, containerTech, displayCommand, groupByProject, type ProjectGroup, shortContainerName } from "@/lib/grouping";
+import { type Conflicts, containerGroups, containerTech, displayCommand, groupByProject, isUnhealthy, type ProjectGroup, shortContainerName } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
 import { Command, ConflictBadge, CopyPath, Muted, OriginLine, PortCell, PortLink, ProjectBadges, TechBadge } from "../cells";
 import { type Column, GroupedTable, type GroupRow, type TableGroup } from "../grouped-table";
@@ -55,7 +55,7 @@ export function ProjectsView({ snap, showSystem, conflicts }: { snap: Snapshot; 
   /** One row per compose / Supabase stack, its published ports inline. */
   const stackRow = ([group, cs]: [string, Container[]]): GroupRow => {
     const name = cs[0].kind === "container" ? cs[0].name : group;
-    const unhealthy = cs.filter((c) => c.health && c.health !== "healthy");
+    const unhealthy = cs.filter(isUnhealthy);
     const ports = cs.flatMap((c) => c.ports.map((p) => ({ c, p }))).sort((a, b) => a.p.hostPort - b.p.hostPort);
     return {
       key: `docker:${group}`,

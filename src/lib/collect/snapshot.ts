@@ -57,20 +57,20 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
 export async function collectSnapshot(): Promise<Snapshot> {
   const errors: string[] = [];
   const psRows = listProcesses();
-  const [ps, listening, docker, tailscale, machine] = await Promise.all([
-    psRows,
-    psRows.then(collectListeningProcesses),
+  const listeningRows = collectListeningProcesses(psRows);
+  // ssh and tunnel clients need only ps and lsof, so they don't wait for docker, tailscale or the machine
+  const connections = Promise.all([psRows, listeningRows]).then(([ps, l]) =>
+    Promise.all([collectSsh(ps, l.procs), collectTunnels(ps, l.procs)]),
+  );
+  const [listening, [ssh, tunnels], docker, tailscale, machine] = await Promise.all([
+    listeningRows,
+    connections,
     collectContainers(),
     collectTailscale(),
     collectMachine(),
   ]);
   if (listening.error) errors.push(`lsof: ${listening.error}`);
   if (docker.error) errors.push(docker.error);
-
-  const [ssh, tunnels] = await Promise.all([
-    collectSsh(ps, listening.procs),
-    collectTunnels(ps, listening.procs),
-  ]);
 
   return {
     at: new Date().toISOString(),

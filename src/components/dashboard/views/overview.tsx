@@ -6,10 +6,9 @@ import { type AttentionItem, attentionItems, usageLevel } from "@/lib/attention"
 import type { DockerDiskRow, MachineInfo, RemoteSnapshot, Snapshot, Usage } from "@/lib/collect/types";
 import { formatBytes, since } from "@/lib/format";
 import { type Conflicts, isUp, projectCount } from "@/lib/grouping";
-import { TABS, type Tab } from "@/lib/tabs";
+import { type Tab, tabLabel } from "@/lib/tabs";
 import { cn } from "@/lib/utils";
 
-const tabLabel = (tab: Tab) => TABS.find((t) => t.id === tab)?.label ?? tab;
 
 /** This Mac and every remote host at a glance: what needs attention first, then one card per machine. */
 export function OverviewView({
