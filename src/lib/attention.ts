@@ -22,23 +22,29 @@ export type AttentionItem = {
 const pct = (u: Usage) => u.used / u.total;
 const percent = (u: Usage) => `${Math.round(pct(u) * 100)}%`;
 
+/** How full a disk, memory or swap is worth flagging: from 80%, and an error from 90%. The Overview meters use it too. */
+export function usageLevel(ratio: number): "error" | "warn" | undefined {
+  return ratio >= 0.9 ? "error" : ratio >= 0.8 ? "warn" : undefined;
+}
+
 /** Disk, swap and CPU load against their limits. */
 function resourceItems(m: MachineInfo, machine: string): AttentionItem[] {
   const items: AttentionItem[] = [];
-  if (m.disk && pct(m.disk) >= 0.8) {
+  const diskLevel = m.disk && usageLevel(pct(m.disk));
+  if (m.disk && diskLevel) {
     items.push({
       key: `${machine}:disk`,
-      level: pct(m.disk) >= 0.9 ? "error" : "warn",
+      level: diskLevel,
       machine,
       text: `Disk ${percent(m.disk)} full`,
       detail: `${formatBytes(m.disk.total - m.disk.used)} free of ${formatBytes(m.disk.total)}`,
     });
   }
-  if (m.swap && m.swap.total > 0 && pct(m.swap) >= 0.8) {
+  const swapLevel = m.swap && m.swap.total > 0 && usageLevel(pct(m.swap));
+  if (m.swap && swapLevel) {
     items.push({
       key: `${machine}:swap`,
-      // same thresholds as the Overview meters: amber from 80%, red from 90%
-      level: pct(m.swap) >= 0.9 ? "error" : "warn",
+      level: swapLevel,
       machine,
       text: `Swap ${percent(m.swap)} used`,
       detail: `${formatBytes(m.swap.used, true)} of ${formatBytes(m.swap.total, true)}: memory is under pressure`,

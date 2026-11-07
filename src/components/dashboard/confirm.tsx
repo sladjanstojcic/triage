@@ -1,5 +1,3 @@
-"use client";
-
 import { Loader2Icon } from "lucide-react";
 import { useTransition } from "react";
 import { toast } from "sonner";
@@ -14,9 +12,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 
+type Act = () => Promise<{ error?: string }>;
+
 /**
- * Confirmation for an action that changes something (adds or removes a host). Stays open and shows a
- * toast when the action returns an error; closes on success.
+ * Confirmation for an action that changes something (stop, start, add or remove a host). Stays open and
+ * shows a toast when the action returns an error; closes on success. `secondary` adds a second choice.
  */
 export function ConfirmDialog({
   open,
@@ -26,6 +26,7 @@ export function ConfirmDialog({
   confirmLabel,
   destructive = false,
   onConfirm,
+  secondary,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -33,13 +34,14 @@ export function ConfirmDialog({
   description: React.ReactNode;
   confirmLabel: string;
   destructive?: boolean;
-  onConfirm: () => Promise<{ error?: string }>;
+  onConfirm: Act;
+  secondary?: { label: string; title?: string; onConfirm: Act };
 }) {
   const [pending, startTransition] = useTransition();
 
-  const confirm = () =>
+  const confirm = (act: Act) =>
     startTransition(async () => {
-      const res = await onConfirm();
+      const res = await act();
       if (res.error) toast.error(res.error);
       else onOpenChange(false);
     });
@@ -53,7 +55,12 @@ export function ConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <Button variant={destructive ? "destructive" : "default"} disabled={pending} onClick={confirm}>
+          {secondary && (
+            <Button variant="outline" disabled={pending} onClick={() => confirm(secondary.onConfirm)} title={secondary.title}>
+              {secondary.label}
+            </Button>
+          )}
+          <Button variant={destructive ? "destructive" : "default"} disabled={pending} onClick={() => confirm(onConfirm)}>
             {pending && <Loader2Icon className="animate-spin" />} {confirmLabel}
           </Button>
         </AlertDialogFooter>

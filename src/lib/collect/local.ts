@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { run } from "@/lib/exec";
-import { describeOrigin, parseOriginEnv, processChain } from "./origin";
+import { describeOrigin, parseOriginEnv, processChain, stopPidFor } from "./origin";
 import type { ListenAddr, LocalProcess, ProjectInfo } from "./types";
 
 export type PsRow = { pid: number; ppid: number; elapsed: string; cpu: number; memMB: number; tty: string; command: string };
@@ -102,8 +102,6 @@ export function detectTech(text: string): string | undefined {
   return undefined;
 }
 
-export const DEV_CLI = /\b(next|nuxt|astro|remix|vite|react-router)\b.*\b(dev|start|preview)\b/;
-
 /** Desktop apps and OS daemons that listen on ports but aren't things you're developing. */
 function isSystem(command: string, cwd?: string): boolean {
   if (/Application Support\/Local\//.test(command)) return false;
@@ -113,7 +111,7 @@ function isSystem(command: string, cwd?: string): boolean {
 }
 
 // Git lookups are the slowest part of a poll; cache per folder briefly.
-const projectCache = new Map<string, { at: number; info: ProjectInfo | undefined }>();
+const projectCache = new Map<string, { at: number; info: Promise<ProjectInfo | undefined> }>();
 const PROJECT_TTL_MS = 15_000;
 
 function findUp(start: string, marker: string): string | undefined {
@@ -130,7 +128,13 @@ export async function projectFor(dir: string | undefined): Promise<ProjectInfo |
   if (!dir || dir === "/" || !dir.startsWith("/")) return undefined;
   const hit = projectCache.get(dir);
   if (hit && Date.now() - hit.at < PROJECT_TTL_MS) return hit.info;
+  // the pending lookup is cached, so containers and processes in one folder share a single git call
+  const info = lookupProject(dir);
+  projectCache.set(dir, { at: Date.now(), info });
+  return info;
+}
 
+async function lookupProject(dir: string): Promise<ProjectInfo | undefined> {
   let info: ProjectInfo | undefined;
   if (!existsSync(dir)) {
     // the process is still running inside a folder that was removed (e.g. a deleted worktree)
@@ -160,7 +164,6 @@ export async function projectFor(dir: string | undefined): Promise<ProjectInfo |
       if (root !== process.env.HOME) info = { root, name: path.basename(root), isWorktree: false };
     }
   }
-  projectCache.set(dir, { at: Date.now(), info });
   return info;
 }
 
@@ -242,8 +245,6 @@ export async function collectListeningProcesses(ps: Map<number, PsRow>): Promise
       const command = row?.command ?? l.name;
       const parentCommand = parent && parent.pid > 1 ? parent.command : undefined;
       const system = isSystem(command, cwd);
-      // `next dev` / `vite` etc. spawn the actual server; stop the CLI so it doesn't respawn or linger
-      const viaCli = !!parentCommand && DEV_CLI.test(parentCommand) && !DEV_CLI.test(command);
       return {
         pid,
         ppid: row?.ppid ?? 0,
@@ -257,7 +258,7 @@ export async function collectListeningProcesses(ps: Map<number, PsRow>): Promise
         listens: dedupeListens(l.names.map(parseAddr).filter((a): a is ListenAddr => !!a)),
         tech: detectTech(`${command} ${parentCommand ?? ""}`),
         system,
-        stopPid: viaCli && row ? row.ppid : pid,
+        stopPid: stopPidFor(pid, ps),
         project: system ? undefined : await localProject(`${command} ${cwd ?? ""}`, cwd),
         origin: system ? undefined : describeOrigin(chains.get(pid)!, launchEnv(chains.get(pid)!, envs)),
       };

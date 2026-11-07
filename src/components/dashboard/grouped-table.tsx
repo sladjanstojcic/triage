@@ -1,5 +1,3 @@
-"use client";
-
 import { ChevronRightIcon } from "lucide-react";
 import { createContext, Fragment, use } from "react";
 import { Card } from "@/components/ui/card";
@@ -53,7 +51,7 @@ export function GroupedTable({
   flat?: boolean;
 }) {
   const { collapsed, toggle } = use(CollapseContext);
-  if (groups.every((g) => flat && g.rows.length === 0) || groups.length === 0) return <Empty>{empty}</Empty>;
+  if (groups.every((g) => flat && g.rows.length === 0)) return <Empty>{empty}</Empty>;
   const indent = (i: number) => i === 0 && !flat && "pl-9";
 
   const align = (c: Column) => cn(c.width, c.align === "right" && "text-right");

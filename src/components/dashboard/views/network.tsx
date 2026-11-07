@@ -2,7 +2,7 @@ import { ArrowRightIcon, GlobeIcon, NetworkIcon, ServerIcon } from "lucide-react
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { RemoteSnapshot, Snapshot, SshConnection } from "@/lib/collect/types";
-import { count, humanElapsed } from "@/lib/format";
+import { count, humanElapsed, isLoopback } from "@/lib/format";
 import { sshMachines, sshUser } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
 import { Command, Muted, PortLink, RemoteHint, TechBadge } from "../cells";
@@ -17,8 +17,6 @@ const SSH_COLUMNS: Column[] = [
   { header: "", width: "w-10" },
 ];
 
-const LOOPBACK = /^(localhost|127\.0\.0\.1|::1)$/;
-
 /**
  * A tunnel's forwards in aligned columns, in the same form as the Remote tab's SSH tunnel column:
  * "-L" → local link, the port it reaches on the host, what listens there; "-R" and "-D" get their own words.
@@ -32,7 +30,7 @@ function ForwardList({ conn, snap, remote }: { conn: SshConnection; snap: Snapsh
         if (f.kind === "L" && f.localPort) {
           // the local port row for this forward knows what it reaches on the remote host
           const row = snap.ports.find((r) => r.ownerKind === "ssh" && r.pid === conn.pid && r.port === f.localPort);
-          const where = f.destHost && !LOOPBACK.test(f.destHost) ? ` on ${f.destHost}` : "";
+          const where = f.destHost && !isLoopback(f.destHost) ? ` on ${f.destHost}` : "";
           return (
             <div key={key} className="contents">
               <PortLink port={f.localPort} address={f.bind ?? "127.0.0.1"} tunnel className="text-xs" />
@@ -50,7 +48,7 @@ function ForwardList({ conn, snap, remote }: { conn: SshConnection; snap: Snapsh
             <div key={key} className="contents">
               <span className="font-mono font-semibold">host :{f.remotePort}</span>
               <span className={muted}>
-                → this Mac {f.destHost && !LOOPBACK.test(f.destHost) ? f.destHost : ""}:{f.destPort}
+                → this Mac {f.destHost && !isLoopback(f.destHost) ? f.destHost : ""}:{f.destPort}
               </span>
               <span className="text-muted-foreground">reverse tunnel: the host reaches this Mac</span>
             </div>

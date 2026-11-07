@@ -1,6 +1,6 @@
 /** This Mac's identity and load (sysctl, vm_stat, df, pmset), and `docker system df`. */
 import os from "node:os";
-import { run } from "@/lib/exec";
+import { type ExecResult, run } from "@/lib/exec";
 import type { DockerDiskRow, MachineInfo, Usage } from "./types";
 
 /** vm_stat → memory in use the way Activity Monitor counts it: app (active) + wired + compressed. */
@@ -61,13 +61,19 @@ export function parseDockerDf(text: string): DockerDiskRow[] {
     }));
 }
 
-/** Everything here takes ~40 ms, so it runs on every scan. */
+// CPU, cores, memory size, boot time and macOS version can't change while this server runs: read them once.
+let fixed: Promise<[ExecResult, ExecResult]> | undefined;
+
+/** The load half takes ~40 ms, so it runs on every scan. */
 export async function collectMachine(): Promise<MachineInfo> {
-  const [sys, vm, swap, ver, df, batt] = await Promise.all([
+  fixed ??= Promise.all([
     run("sysctl", ["-n", "machdep.cpu.brand_string", "hw.ncpu", "hw.memsize", "kern.boottime"]),
+    run("sw_vers", ["-productVersion"]),
+  ]);
+  const [[sys, ver], vm, swap, df, batt] = await Promise.all([
+    fixed,
     run("vm_stat", []),
     run("sysctl", ["-n", "vm.swapusage"]),
-    run("sw_vers", ["-productVersion"]),
     // user data lives on the Data volume; "/" is the small sealed system volume
     run("df", ["-kP", "/System/Volumes/Data"]),
     run("pmset", ["-g", "batt"]),
@@ -92,7 +98,7 @@ export async function collectMachine(): Promise<MachineInfo> {
 
 // `docker system df` takes about a second, so it refreshes in the background every couple of minutes and
 // scans return the last result.
-const DOCKER_DF_MS = 2 * 60_000;
+export const DOCKER_DF_MS = 2 * 60_000;
 let dockerDisk: { at: number; rows?: DockerDiskRow[]; pending?: Promise<void> } = { at: 0 };
 
 export function cachedDockerDisk(): DockerDiskRow[] | undefined {

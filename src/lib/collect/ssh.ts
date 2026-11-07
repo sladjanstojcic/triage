@@ -52,11 +52,24 @@ function forwardsFrom(opts: Map<string, string[]>): Forward[] {
   return out;
 }
 
+// `ssh -G` reads ~/.ssh/config; a minute-old answer is fine and saves a spawn per connection per poll.
+const SSH_CONFIG_TTL_MS = 60_000;
+const sshConfigCache = new Map<string, { at: number; cfg: ReturnType<typeof readSshConfig> }>();
+
 /** Forwards and host details that live in ~/.ssh/config rather than on the command line. */
-async function sshConfig(target: string, opts: Map<string, string[]>) {
+export function sshConfig(target: string, opts = new Map<string, string[]>()) {
   const args = ["-G"];
   for (const k of ["F", "p", "l"]) for (const v of opts.get(k) ?? []) args.push(`-${k}`, v);
   args.push(target);
+  const key = args.join("\0");
+  const hit = sshConfigCache.get(key);
+  if (hit && Date.now() - hit.at < SSH_CONFIG_TTL_MS) return hit.cfg;
+  const cfg = readSshConfig(args);
+  sshConfigCache.set(key, { at: Date.now(), cfg });
+  return cfg;
+}
+
+async function readSshConfig(args: string[]) {
   const res = await run("ssh", args, 3000);
   const cfg = { forwards: [] as Forward[], hostname: undefined as string | undefined, user: undefined as string | undefined, port: undefined as string | undefined };
   for (const line of res.stdout.split("\n")) {

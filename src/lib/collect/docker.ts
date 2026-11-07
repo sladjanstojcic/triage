@@ -69,9 +69,5 @@ export async function collectContainers(): Promise<{ containers: Container[]; er
       };
     }),
   );
-  return {
-    containers: visibleContainers(containers).sort(
-      (a, b) => (a.group ?? "~").localeCompare(b.group ?? "~") || a.name.localeCompare(b.name),
-    ),
-  };
+  return { containers: visibleContainers(containers) };
 }

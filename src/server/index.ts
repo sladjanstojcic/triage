@@ -3,9 +3,9 @@ import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { collectSnapshot } from "@/lib/collect/snapshot";
+import type { ContainerAction } from "@/lib/collect/types";
 import {
   addRemoteHost,
-  type ContainerAction,
   containerAction,
   probeRemoteHosts,
   remoteContainerAction,
@@ -15,6 +15,14 @@ import {
 } from "./actions";
 
 const ACTIONS: ContainerAction[] = ["start", "stop", "restart"];
+
+/** Requests that arrive while `fn` runs (another tab, a poll overlapping a slow scan) share its result. */
+function shared<T>(fn: () => Promise<T>) {
+  let running: Promise<T> | undefined;
+  return () => (running ??= fn().finally(() => (running = undefined)));
+}
+const snapshot = shared(collectSnapshot);
+const remote = shared(probeRemoteHosts);
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 4777);
@@ -59,8 +67,8 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 /** Returns false when the request isn't an API route. */
 async function api(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean> {
   const route = `${req.method} ${pathname}`;
-  if (route === "GET /api/snapshot") return json(res, 200, await collectSnapshot()), true;
-  if (route === "GET /api/remote") return json(res, 200, await probeRemoteHosts()), true;
+  if (route === "GET /api/snapshot") return json(res, 200, await snapshot()), true;
+  if (route === "GET /api/remote") return json(res, 200, await remote()), true;
   if (!pathname.startsWith("/api/")) return false;
 
   // Everything below changes state. A cross-site page can't send a same-origin Origin header, and
