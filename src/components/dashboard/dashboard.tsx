@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { containerGroups, findConflicts, groupByProject, isUp, projectCount, sshMachines, visiblePorts } from "@/lib/grouping";
 import { AddHostSheet } from "./add-host-sheet";
 import { CollapseContext, groupKey } from "./grouped-table";
-import { RefreshContext } from "./stop";
+import { RefreshContext, ScanContext } from "./stop";
 import { ThemeMenu } from "./theme-menu";
 import { usePolling } from "./use-polling";
 import { DockerView } from "./views/docker";
@@ -103,6 +103,8 @@ export function Dashboard() {
 
   const view = useMemo(() => (snap ? filterSnapshot(snap, query) : undefined), [snap, query]);
   const conflicts = useMemo(() => findConflicts(snap?.ports ?? []), [snap]);
+  // the unfiltered scans: what a stop takes down doesn't depend on the search box
+  const scan = useMemo(() => ({ snap, remote }), [snap, remote]);
   // group keys of the table on the active tab, for expand/collapse all
   const groupKeys = useMemo(() => {
     if (!view) return [];
@@ -131,6 +133,7 @@ export function Dashboard() {
 
   return (
     <RefreshContext value={load}>
+    <ScanContext value={scan}>
     <CollapseContext value={collapse}>
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 desktop:max-w-none desktop:pt-0">
         {/* In the desktop app this is the title bar: it stays on top, drags the window and leaves room for the window buttons. */}
@@ -258,6 +261,7 @@ export function Dashboard() {
         <AddHostSheet open={addHostOpen} onOpenChange={setAddHostOpen} snap={snap} hosts={remote} onAdded={loadRemote} />
       </div>
     </CollapseContext>
+    </ScanContext>
     </RefreshContext>
   );
 }

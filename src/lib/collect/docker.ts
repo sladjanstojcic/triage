@@ -1,6 +1,7 @@
 import { run } from "@/lib/exec";
 import { visibleContainers } from "@/lib/grouping";
 import { projectFor } from "./local";
+import { parseSize } from "./machine";
 import type { Container, ContainerPort } from "./types";
 
 type Inspect = {
@@ -23,6 +24,40 @@ function humanStatus(s: Inspect["State"]): string {
   return s.Status;
 }
 
+/** `docker stats --format "{{json .}}"` lines → CPU percent and memory (MiB) by short container id. */
+export function parseDockerStats(out: string): Map<string, { cpu: number; memMB: number }> {
+  const stats = new Map<string, { cpu: number; memMB: number }>();
+  for (const line of out.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const s = JSON.parse(line) as { ID?: string; CPUPerc?: string; MemUsage?: string };
+      if (!s.ID) continue;
+      stats.set(s.ID.slice(0, 12), {
+        cpu: Number.parseFloat(s.CPUPerc ?? "") || 0,
+        // "45.41MiB / 2.91GiB": the part before the slash is what the container uses
+        memMB: Math.round(parseSize(s.MemUsage?.split("/")[0] ?? "") / 1024 ** 2),
+      });
+    } catch {
+      // a partial line when docker is shutting down
+    }
+  }
+  return stats;
+}
+
+// `docker stats --no-stream` samples for about two seconds, so it refreshes in the background and scans
+// use the last sample.
+export const DOCKER_STATS_MS = 30_000;
+let dockerStats: { at: number; byId: Map<string, { cpu: number; memMB: number }>; pending?: Promise<void> } = { at: 0, byId: new Map() };
+
+function cachedDockerStats() {
+  if (Date.now() - dockerStats.at > DOCKER_STATS_MS && !dockerStats.pending) {
+    dockerStats.pending = run("docker", ["stats", "--no-stream", "--format", "{{json .}}"], 15_000).then((res) => {
+      dockerStats = { at: Date.now(), byId: res.ok ? parseDockerStats(res.stdout) : new Map() };
+    });
+  }
+  return dockerStats.byId;
+}
+
 export async function collectContainers(): Promise<{ containers: Container[]; error?: string }> {
   // -a: stopped containers too, so a stack you stopped can be started again (visibleContainers decides)
   const ids = await run("docker", ["ps", "-aq"], 5000);
@@ -36,6 +71,7 @@ export async function collectContainers(): Promise<{ containers: Container[]; er
   const res = await run("docker", ["inspect", ...idList], 8000);
   if (!res.ok) return { containers: [], error: `docker inspect failed: ${res.stderr.trim().slice(0, 200)}` };
   const data = JSON.parse(res.stdout) as Inspect[];
+  const stats = cachedDockerStats();
 
   const containers = await Promise.all(
     data.map(async (c): Promise<Container> => {
@@ -66,6 +102,7 @@ export async function collectContainers(): Promise<{ containers: Container[]; er
         kind: supabase ? "supabase" : compose ? "compose" : "container",
         workdir,
         project: await projectFor(workdir),
+        ...(c.State.Status === "running" ? stats.get(c.Id.slice(0, 12)) : undefined),
       };
     }),
   );

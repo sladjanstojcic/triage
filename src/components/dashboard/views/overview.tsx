@@ -1,4 +1,5 @@
 import { ArrowRightIcon, BatteryChargingIcon, BatteryIcon, CheckCircle2Icon, CircleAlertIcon, InfoIcon, LaptopIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
+import { use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +9,7 @@ import { formatBytes, since } from "@/lib/format";
 import { type Conflicts, isUp, projectCount } from "@/lib/grouping";
 import { type Tab, tabLabel } from "@/lib/tabs";
 import { cn } from "@/lib/utils";
+import { ProcessStop, ScanContext } from "../stop";
 
 
 /** This Mac and every remote host at a glance: what needs attention first, then one card per machine. */
@@ -117,6 +119,7 @@ function Attention({ items, machines, onTab }: { items: AttentionItem[]; machine
                   </div>
                   {item.detail && <p className="font-mono text-xs wrap-anywhere text-muted-foreground">{item.detail}</p>}
                 </div>
+                {item.stopPid && <AttentionStop stopPid={item.stopPid} />}
                 {item.tab && (
                   <Button variant="link" size="xs" className="shrink-0" onClick={() => onTab(item.tab!)}>
                     {tabLabel(item.tab)}
@@ -129,6 +132,24 @@ function Attention({ items, machines, onTab }: { items: AttentionItem[]; machine
         </ul>
       </CardContent>
     </Card>
+  );
+}
+
+/** Stop the server an attention item is about, right from the list. */
+function AttentionStop({ stopPid }: { stopPid: number }) {
+  const { snap } = use(ScanContext);
+  const p = snap?.processes.find((x) => x.stopPid === stopPid);
+  if (!p) return null;
+  const port = p.listens[0]?.port ?? 0;
+  return (
+    <ProcessStop
+      stopPid={stopPid}
+      port={port}
+      title={`Kill :${port}${p.project ? ` (${p.project.name})` : ""}`}
+      viaCli={stopPid !== p.pid}
+      command={stopPid !== p.pid ? p.parentCommand : p.command}
+      folder={p.cwd}
+    />
   );
 }
 

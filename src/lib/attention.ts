@@ -3,7 +3,7 @@
  * derived from data the scans already have. Pure, so it is tested without a UI.
  */
 import type { MachineInfo, RemoteSnapshot, Snapshot, Usage } from "@/lib/collect/types";
-import { formatBytes, isExposed } from "@/lib/format";
+import { elapsedSeconds, formatBytes, formatMem, humanElapsed, isExposed } from "@/lib/format";
 import { type Conflicts, isUnhealthy, isUp, portOwnerName } from "@/lib/grouping";
 import type { Tab } from "@/lib/tabs";
 
@@ -17,7 +17,15 @@ export type AttentionItem = {
   detail?: string;
   /** where the details are */
   tab?: Tab;
+  /** a local process the item offers to stop right there */
+  stopPid?: number;
 };
+
+/** A dev server running this long that isn't using the CPU was most likely left behind. */
+export const FORGOTTEN_AFTER_S = 24 * 3600;
+const IDLE_CPU = 1;
+// MCP servers (an npm package named *mcp*, or one Triage recognises) are agent tools that stay up on purpose.
+const MCP_SERVER = /node_modules\/(?:@[^/\s]+\/)?[^/\s]*mcp/i;
 
 const pct = (u: Usage) => u.used / u.total;
 const percent = (u: Usage) => `${Math.round(pct(u) * 100)}%`;
@@ -93,8 +101,11 @@ export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefi
         ? `ssh tunnel to ${snap.ssh.find((c) => c.pid === p.pid)?.target}`
         : [p.project?.name, p.origin.agent && `started by ${p.origin.agent}`].filter(Boolean).join(" · ") || p.name,
       tab: ssh ? "ssh" : "projects",
+      // a tunnel is disconnected from the SSH tab, where autossh is stopped too
+      stopPid: ssh ? undefined : p.stopPid,
     });
   }
+  items.push(...forgottenItems(snap, mac, sshPids));
   const missing = new Map<string, string>();
   for (const p of snap.ports) if (p.project?.missing) missing.set(p.project.root, p.project.name);
   for (const c of snap.containers) if (isUp(c) && c.project?.missing) missing.set(c.project.root, c.project.name);
@@ -152,6 +163,40 @@ export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefi
 
   const rank = { error: 0, warn: 1, info: 2 };
   return items.sort((a, b) => rank[a.level] - rank[b.level]);
+}
+
+/**
+ * Dev servers whose launcher is still open but that have run for a day without using the CPU: a server
+ * an agent or a terminal tab started and nobody stopped. One item per server, however many ports it has.
+ * Services the OS runs on purpose (launchd, systemd), MCP servers, tunnels and servers without a project are left out.
+ */
+function forgottenItems(snap: Snapshot, mac: string, sshPids: Set<number>): AttentionItem[] {
+  const stoppable = new Set(snap.ports.flatMap((r) => (r.stopPid ? [r.stopPid] : [])));
+  const tunnelPids = new Set(snap.tunnels.flatMap((t) => (t.pid ? [t.pid] : [])));
+  const byServer = new Map<number, Snapshot["processes"]>();
+  for (const p of snap.processes) {
+    if (p.system || !p.project || p.project.missing || p.origin?.detached) continue;
+    if (sshPids.has(p.pid) || tunnelPids.has(p.pid) || !stoppable.has(p.stopPid)) continue;
+    if (p.origin?.app === "launchd" || p.origin?.app === "systemd") continue;
+    if (MCP_SERVER.test(p.command) || p.tech?.includes("MCP")) continue;
+    if ((elapsedSeconds(p.elapsed) ?? 0) < FORGOTTEN_AFTER_S || p.stopTree.cpu >= IDLE_CPU) continue;
+    byServer.set(p.stopPid, [...(byServer.get(p.stopPid) ?? []), p]);
+  }
+  return [...byServer].map(([stopPid, procs]) => {
+    const p = procs[0];
+    const by = [p.origin?.agent, p.origin?.app].filter(Boolean).join(" in ");
+    return {
+      key: `${mac}:forgotten:${stopPid}`,
+      level: "info",
+      machine: mac,
+      text: `${procs.flatMap((x) => x.listens.map((l) => `:${l.port}`)).join(" ")} idle, up ${humanElapsed(p.elapsed)}`,
+      detail: [p.project?.subpath ?? p.project?.name, by && `started by ${by}`, `holds ${formatMem(p.stopTree.memMB)}`]
+        .filter(Boolean)
+        .join(" · "),
+      tab: "projects",
+      stopPid,
+    };
+  });
 }
 
 /** Docker space that `docker system prune` could free; a warning when the disk is nearly full too. */

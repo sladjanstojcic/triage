@@ -33,7 +33,23 @@ export type ProjectGroup = {
   folder?: string;
   ports: PortRow[];
   containers: Container[];
+  /** CPU percent and memory (MiB) of its servers with their child processes, plus its containers */
+  usage: { cpu: number; memMB: number };
 };
+
+/**
+ * What a group of ports and containers costs right now. A server counts once with its whole tree (the dev
+ * CLI, the server, its workers), however many ports it has; containers count from `docker stats`.
+ */
+export function usageOf(ports: PortRow[], containers: Pick<Container, "cpu" | "memMB">[], procs: LocalProcess[]) {
+  const stopPids = new Set(ports.flatMap((p) => (p.ownerKind === "process" ? [procs.find((x) => x.pid === p.pid)?.stopPid ?? p.pid] : [])));
+  const trees = [...stopPids].flatMap((pid) => procs.find((p) => p.stopPid === pid)?.stopTree ?? []);
+  const parts = [...trees, ...containers];
+  return {
+    cpu: Math.round(parts.reduce((sum, x) => sum + (x.cpu ?? 0), 0) * 10) / 10,
+    memMB: parts.reduce((sum, x) => sum + (x.memMB ?? 0), 0),
+  };
+}
 
 /** Projects group by repo root (or name when there is none): the Projects tab and the header count agree. */
 const projectKey = (p: ProjectInfo) => p.root || p.name;
@@ -44,9 +60,9 @@ const projectKey = (p: ProjectInfo) => p.root || p.name;
  */
 export function groupByProject(snap: Snapshot, showSystem: boolean): ProjectGroup[] {
   const groups = new Map<string, ProjectGroup>();
-  const get = (key: string, init: Omit<ProjectGroup, "key" | "ports" | "containers">) => {
+  const get = (key: string, init: Omit<ProjectGroup, "key" | "ports" | "containers" | "usage">) => {
     let g = groups.get(key);
-    if (!g) groups.set(key, (g = { key, ports: [], containers: [], ...init }));
+    if (!g) groups.set(key, (g = { key, ports: [], containers: [], usage: { cpu: 0, memMB: 0 }, ...init }));
     return g;
   };
 
@@ -72,6 +88,7 @@ export function groupByProject(snap: Snapshot, showSystem: boolean): ProjectGrou
       get(`~docker:${c.group ?? ""}`, { title: c.group ?? "Standalone containers", icon: "docker" }).containers.push(c);
     }
   }
+  for (const g of groups.values()) g.usage = usageOf(g.ports, g.containers, snap.processes);
   return [...groups.values()].sort((a, b) => {
     const rank = (g: ProjectGroup) => (g.key.startsWith("~~") ? 3 : g.key.startsWith("~") ? 2 : 1);
     return rank(a) - rank(b) || a.title.localeCompare(b.title);

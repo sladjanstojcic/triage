@@ -5,9 +5,17 @@ export function tildify(text: string): string {
   return text.replace(/\/(Users|home)\/[^/\s]+/g, "~");
 }
 
+const ETIME = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/;
+
+/** ps etime "[[dd-]hh:]mm:ss" → seconds; undefined when it isn't one. */
+export function elapsedSeconds(etime: string): number | undefined {
+  const m = etime.match(ETIME);
+  return m ? ((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3])) * 60 + Number(m[4]) : undefined;
+}
+
 /** ps etime "[[dd-]hh:]mm:ss" → "3d 4h" / "2h 5m" / "12m" */
 export function humanElapsed(etime: string): string {
-  const m = etime.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+  const m = etime.match(ETIME);
   if (!m) return etime;
   const [d, h, min] = [Number(m[1] ?? 0), Number(m[2] ?? 0), Number(m[3])];
   if (d) return `${d}d ${h}h`;
@@ -102,6 +110,9 @@ export function formatBytes(n: number, binary = false): string {
   }
   return `${n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
 }
+
+/** Memory in MiB (ps, docker stats) as "850 MB" / "1.4 GB". */
+export const formatMem = (mb: number) => formatBytes(mb * 1024 ** 2, true);
 
 /** Time since an ISO date as "1d 2h" / "3h 5m" / "12m". */
 export function since(iso: string, now = Date.now()): string {

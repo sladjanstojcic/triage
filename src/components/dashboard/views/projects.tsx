@@ -2,7 +2,7 @@ import { BoxIcon, FolderIcon, NetworkIcon } from "lucide-react";
 import { Fragment } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { Container, PortRow, Snapshot } from "@/lib/collect/types";
-import { count, humanElapsed } from "@/lib/format";
+import { count, formatMem, humanElapsed } from "@/lib/format";
 import { type Conflicts, containerGroups, containerTech, displayCommand, groupByProject, isUnhealthy, type ProjectGroup, shortContainerName } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
 import { Command, ConflictBadge, CopyPath, Muted, OriginLine, PortCell, PortLink, ProjectBadges, TechBadge } from "../cells";
@@ -45,7 +45,8 @@ export function ProjectsView({ snap, showSystem, conflicts }: { snap: Snapshot; 
           <OriginLine origin={proc?.origin} />
         </Fragment>,
         proc && <Muted key="uptime">{humanElapsed(proc.elapsed)}</Muted>,
-        proc && <Muted key="mem">{proc.memMB} MB</Muted>,
+        // the whole server: dev CLI, server and workers, which is what a kill frees
+        proc && <Muted key="mem">{formatMem(proc.stopTree.memMB)}</Muted>,
         <Muted key="pid">{p.pid}</Muted>,
         <PortStop key="stop" row={p} procs={procs} />,
       ],
@@ -82,7 +83,7 @@ export function ProjectsView({ snap, showSystem, conflicts }: { snap: Snapshot; 
           </div>
         </Fragment>,
         <Muted key="uptime">{cs[0].status.replace(/^Up /, "")}</Muted>,
-        null,
+        cs.some((c) => c.memMB !== undefined) ? <Muted key="mem">{formatMem(cs.reduce((sum, c) => sum + (c.memMB ?? 0), 0))}</Muted> : null,
         null,
         <ContainerActionButton key="stop" action="stop" containers={cs} />,
       ],
@@ -100,7 +101,13 @@ export function ProjectsView({ snap, showSystem, conflicts }: { snap: Snapshot; 
         <CopyPath path={g.folder} />
       </>
     ),
-    meta: [count(g.ports.length, "port"), count(g.containers.length, "container")].filter(Boolean).join(" · "),
+    meta: [
+      count(g.ports.length, "port"),
+      count(g.containers.length, "container"),
+      g.usage.memMB > 0 && `${formatMem(g.usage.memMB)} · ${g.usage.cpu}% CPU`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
     rows: [...g.ports.map(portRow), ...containerGroups(g.containers).map(stackRow)],
   }));
 

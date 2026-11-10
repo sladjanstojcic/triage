@@ -17,6 +17,20 @@ export function stopPidFor(pid: number, table: Map<number, ProcRow>): number {
   return parent && parent.pid > 1 && DEV_CLI.test(parent.command) && !DEV_CLI.test(row!.command) ? parent.pid : pid;
 }
 
+/** Each pid's direct children, built once per process table for `descendants`. */
+export function childIndex(rows: Map<number, ProcRow>): Map<number, number[]> {
+  const children = new Map<number, number[]>();
+  for (const r of rows.values()) children.set(r.ppid, [...(children.get(r.ppid) ?? []), r.pid]);
+  return children;
+}
+
+/** `pid` and everything it started, directly or further down: what ends when it is stopped. */
+export function processTree(pid: number, children: Map<number, number[]>): number[] {
+  const tree = [pid];
+  for (let i = 0; i < tree.length && tree.length < 4096; i++) tree.push(...(children.get(tree[i]) ?? []));
+  return tree;
+}
+
 /** Environment variables that say where a process was launched from; children inherit them. */
 export const ORIGIN_ENV = ["__CFBundleIdentifier", "TERM_PROGRAM", "CLAUDECODE", "XPC_SERVICE_NAME", "INVOCATION_ID", "TMUX"];
 

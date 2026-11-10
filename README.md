@@ -36,11 +36,11 @@ Triage answers them on one page, refreshed every few seconds.
 
 ### Overview
 
-This Mac and every remote host at a glance: CPU load, memory, swap, disk, battery and Docker disk use per machine. A **Needs attention** list flags nearly full disk or swap, ports bound twice, servers whose launcher closed, stacks running from deleted folders, unhealthy containers, unreachable hosts, Docker space you can reclaim, and ports open to your network. Each item links to the tab that explains it.
+This Mac and every remote host at a glance: CPU load, memory, swap, disk, battery and Docker disk use per machine. A **Needs attention** list flags nearly full disk or swap, ports bound twice, servers whose launcher closed, dev servers left idle for a day, stacks running from deleted folders, unhealthy containers, unreachable hosts, Docker space you can reclaim, and ports open to your network. Each item links to the tab that explains it, and a forgotten or orphaned server can be killed right there.
 
 ### Projects
 
-Every listening port grouped by project folder, with git branch, worktree badge and monorepo app (`apps/web`). It warns when two processes bind the same port or a process runs from a deleted folder, and shows who started each server (the agent, editor or terminal, e.g. *from Claude Code · herdr · Ghostty*), with a **launcher closed** mark when nothing that started it is still running.
+Every listening port grouped by project folder, with git branch, worktree badge and monorepo app (`apps/web`). It warns when two processes bind the same port or a process runs from a deleted folder, and shows who started each server (the agent, editor or terminal, e.g. *from Claude Code · herdr · Ghostty*), with a **launcher closed** mark when nothing that started it is still running. Each project shows what it costs right now: the memory and CPU of its servers, with their workers and watchers, and of its containers.
 
 ![Projects tab: ports grouped by project folder, with a red warning on a port bound by two apps](docs/screenshots/projects.png)
 
@@ -75,6 +75,8 @@ Every action asks for confirmation first:
 - **✕ kill** a dev server (SIGTERM, or SIGKILL with *Force kill*): the `next dev`/`vite` CLI, not just its worker; also tunnel clients such as `cloudflared` or `ngrok`
 - **disconnect** an SSH tunnel: the `autossh` supervisor too, so it doesn't reconnect
 - **■ stop**, **▶ start** or **↺ restart** a container, or stop and start a whole compose/Supabase stack
+
+Before a kill or a stop, the confirmation lists what else goes down: the server's other ports and processes, tunnels (cloudflared, ngrok, Tailscale serve) and `ssh -R` forwards that point at it, and local SSH tunnels to a remote service.
 
 This works locally and on remote hosts (over SSH, with `sudo -n` if needed). The server re-checks every target against a fresh scan before acting, and never stops system processes or itself.
 

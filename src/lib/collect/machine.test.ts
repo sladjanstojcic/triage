@@ -43,6 +43,8 @@ test("parseBattery: laptop on battery, charging, desktop", () => {
 test("parseSize and parseDockerDf", () => {
   assert.equal(parseSize("34.55GB"), 34.55e9);
   assert.equal(parseSize("0B"), 0);
+  assert.equal(parseSize("45.5MiB"), 45.5 * 1024 ** 2);
+  assert.equal(parseSize("2.91GiB"), 2.91 * 1024 ** 3);
   assert.deepEqual(
     parseDockerDf(`{"Active":"24","Reclaimable":"17.93GB (51%)","Size":"34.55GB","TotalCount":"48","Type":"Images"}
 {"Active":"0","Reclaimable":"0B","Size":"0B","TotalCount":"0","Type":"Build Cache"}`),

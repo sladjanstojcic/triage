@@ -26,6 +26,9 @@ export type Origin = {
   detached: boolean;
 };
 
+/** The process a stop signals and everything below it: what the stop ends, and what it costs right now. */
+export type ProcessTree = { pids: number[]; cpu: number; memMB: number };
+
 export type LocalProcess = {
   pid: number;
   ppid: number;
@@ -42,6 +45,8 @@ export type LocalProcess = {
   project?: ProjectInfo;
   /** pid to signal to stop this server: the dev CLI parent (e.g. `next dev`) rather than its worker */
   stopPid: number;
+  /** `stopPid` and its descendants (the dev CLI, the server, its workers and watchers) */
+  stopTree: ProcessTree;
   origin?: Origin;
 };
 
@@ -65,6 +70,9 @@ export type Container = {
   kind: "supabase" | "compose" | "container";
   workdir?: string;
   project?: ProjectInfo;
+  /** from `docker stats`, refreshed in the background; undefined until the first sample or when stopped */
+  cpu?: number;
+  memMB?: number;
 };
 
 /** What the local Docker tab and a remote host both show (and stop) for a container. */

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { run } from "@/lib/exec";
-import { describeOrigin, parseOriginEnv, processChain, stopPidFor } from "./origin";
-import type { ListenAddr, LocalProcess, ProjectInfo } from "./types";
+import { childIndex, describeOrigin, parseOriginEnv, processChain, processTree, stopPidFor } from "./origin";
+import type { ListenAddr, LocalProcess, ProcessTree, ProjectInfo } from "./types";
 
 export type PsRow = { pid: number; ppid: number; elapsed: string; cpu: number; memMB: number; tty: string; command: string };
 
@@ -25,6 +25,17 @@ export async function listProcesses(): Promise<Map<number, PsRow>> {
     });
   }
   return rows;
+}
+
+/** A process and its descendants, with their CPU and memory added up. */
+export function treeUsage(pid: number, ps: Map<number, PsRow>, children: Map<number, number[]>): ProcessTree {
+  const pids = processTree(pid, children);
+  const rows = pids.flatMap((p) => ps.get(p) ?? []);
+  return {
+    pids,
+    cpu: Math.round(rows.reduce((sum, r) => sum + r.cpu, 0) * 10) / 10,
+    memMB: rows.reduce((sum, r) => sum + r.memMB, 0),
+  };
 }
 
 /** Parse `lsof -F` output into per-pid records. */
@@ -237,6 +248,7 @@ export async function collectListeningProcesses(psRows: Promise<Map<number, PsRo
     launchEnvs([...new Set([...chains.values()].flat().map((r) => r.pid))], ps),
   ]);
   const cwds = parseLsofFields(cwdRes.stdout);
+  const children = childIndex(ps);
 
   const procs = await Promise.all(
     pids.map(async (pid): Promise<LocalProcess> => {
@@ -247,6 +259,7 @@ export async function collectListeningProcesses(psRows: Promise<Map<number, PsRo
       const command = row?.command ?? l.name;
       const parentCommand = parent && parent.pid > 1 ? parent.command : undefined;
       const system = isSystem(command, cwd);
+      const stopPid = stopPidFor(pid, ps);
       return {
         pid,
         ppid: row?.ppid ?? 0,
@@ -260,7 +273,8 @@ export async function collectListeningProcesses(psRows: Promise<Map<number, PsRo
         listens: dedupeListens(l.names.map(parseAddr).filter((a): a is ListenAddr => !!a)),
         tech: detectTech(`${command} ${parentCommand ?? ""}`),
         system,
-        stopPid: stopPidFor(pid, ps),
+        stopPid,
+        stopTree: treeUsage(stopPid, ps, children),
         project: system ? undefined : await localProject(`${command} ${cwd ?? ""}`, cwd),
         origin: system ? undefined : describeOrigin(chains.get(pid)!, launchEnv(chains.get(pid)!, envs)),
       };
