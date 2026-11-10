@@ -3,6 +3,7 @@
 
 # build output
 /dist
+/release
 *.tsbuildinfo
 
 # misc

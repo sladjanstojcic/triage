@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "main": "dist/desktop.mjs",
   "scripts": {
     "dev": "tsx watch --clear-screen=false --include vite.config.ts src/server/index.ts",
     "build": "vite build && esbuild src/server/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.mjs",
+    "build:desktop": "pnpm build && esbuild src/desktop/main.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/desktop.mjs",
     "start": "NODE_ENV=production node dist/server.mjs",
+    "desktop": "pnpm build:desktop && electron .",
+    "desktop:package": "pnpm build:desktop && electron-builder --mac --dir",
     "lint": "eslint",
     "typecheck": "tsc",
     "test": "tsx --test \"src/**/*.test.ts\"",
@@ -32,6 +36,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.2.1",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -47,5 +53,23 @@
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
-  "packageManager": "pnpm@12.4.2"
+  "packageManager": "pnpm@12.4.2",
+  "build": {
+    "appId": "dev.triage.app",
+    "productName": "Triage",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dir",
+      "icon": "build/icon.png"
+    }
+  }
 }

@@ -155,4 +155,12 @@ server.on("request", async (req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => console.log(`Triage running at http://${HOST}:${PORT}${PROD ? "" : " (dev)"}`));
+/** Settles once the port is bound or taken; the desktop app waits on it to open its window or explain the failure. */
+export const listening = new Promise<string>((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(PORT, HOST, () => {
+    const url = `http://${HOST}:${PORT}`;
+    console.log(`Triage running at ${url}${PROD ? "" : " (dev)"}`);
+    resolve(url);
+  });
+});

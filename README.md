@@ -112,6 +112,17 @@ pnpm service:uninstall
 
 Logs go to `~/Library/Logs/triage.log`. Stop `pnpm dev` first, since both use port 4777, and re-run `service:install` after pulling changes.
 
+### Desktop app
+
+Triage also runs as a macOS app: an Electron window around the same server, with the header as its title bar.
+
+```bash
+pnpm desktop             # build and open it from the repo
+pnpm desktop:package     # build release/mac-arm64/Triage.app; drag it to /Applications
+```
+
+The app starts its own server on port 4777, so stop `pnpm dev` or the LaunchAgent (`pnpm service:uninstall`) first. Closing the window keeps it running; quit with ⌘Q. Links to dev servers open in your browser.
+
 ## Configuration
 
 | Setting | Default | Purpose |

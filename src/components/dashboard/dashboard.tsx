@@ -132,8 +132,9 @@ export function Dashboard() {
   return (
     <RefreshContext value={load}>
     <CollapseContext value={collapse}>
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
-        <header className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-3">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 desktop:max-w-none desktop:pt-0">
+        {/* In the desktop app this is the title bar: it stays on top, drags the window and leaves room for the window buttons. */}
+        <header className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-3 desktop:app-drag desktop:sticky desktop:top-0 desktop:z-20 desktop:-mx-4 desktop:min-h-13 desktop:border-b desktop:bg-background/85 desktop:py-2 desktop:pr-4 desktop:pl-21 desktop:backdrop-blur-md sm:desktop:-mx-6 sm:desktop:pr-6">
           <div className="flex items-center gap-2">
             <ActivityIcon className="size-5 text-emerald-500" />
             <h1 className="text-lg font-semibold tracking-tight">Triage</h1>
@@ -148,7 +149,7 @@ export function Dashboard() {
               {conflicts.size > 0 && <Stat label="shared port" value={conflicts.size} warn />}
             </div>
           )}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2 desktop:app-no-drag">
             {snap && (
               <span className="mr-1 font-mono text-[11px] text-muted-foreground">
                 {paused ? "paused · " : ""}updated {new Date(snap.at).toLocaleTimeString()}

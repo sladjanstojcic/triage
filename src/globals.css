@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* Inside the Electron app (index.html sets data-desktop on <html>). */
+@custom-variant desktop (&:where([data-desktop] *));
 
 @theme inline {
   --color-background: var(--background);
@@ -126,5 +128,18 @@
   }
   html {
     @apply font-sans;
+  }
+}
+/* Desktop app: the header doubles as the window's title bar, and the page doesn't rubber-band like a web page. */
+@utility app-drag {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+}
+@layer base {
+  html[data-desktop] {
+    overscroll-behavior: none;
   }
 }
