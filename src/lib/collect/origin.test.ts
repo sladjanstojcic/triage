@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describeOrigin, parseOriginEnv, processChain, type ProcRow, stopPidFor } from "./origin";
+import { childIndex, describeOrigin, parseOriginEnv, processChain, type ProcRow, processTree, stopPidFor } from "./origin";
 
 const table = (rows: [number, number, string, string][]) =>
   new Map(rows.map(([pid, ppid, tty, command]): [number, ProcRow] => [pid, { pid, ppid, tty, command }]));
@@ -102,4 +102,17 @@ test("stopPidFor: the dev CLI that spawned the server, else the pid itself", () 
   );
   assert.equal(stopPidFor(11, table), 10);
   assert.equal(stopPidFor(20, table), 20);
+});
+
+test("processTree: a pid and everything below it, not its siblings", () => {
+  const rows = table([
+    [1, 0, "??", "/sbin/launchd"],
+    [100, 1, "ttys001", "node next dev"],
+    [101, 100, "ttys001", "next-server"],
+    [102, 101, "ttys001", "node worker"],
+    [103, 100, "ttys001", "esbuild --service"],
+    [200, 1, "ttys002", "vite"],
+  ]);
+  assert.deepEqual(processTree(100, childIndex(rows)).sort(), [100, 101, 102, 103]);
+  assert.deepEqual(processTree(200, childIndex(rows)), [200]);
 });

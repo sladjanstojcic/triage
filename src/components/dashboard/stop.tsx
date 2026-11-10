@@ -3,14 +3,42 @@ import { createContext, use, useState } from "react";
 import { toast } from "sonner";
 import { containerAction, stopProcess, stopRemoteProcess } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import type { ContainerAction, ContainerSummary, LocalProcess, PortRow, RemoteListener } from "@/lib/collect/types";
-import { tildify } from "@/lib/format";
+import type { ContainerAction, ContainerSummary, LocalProcess, PortRow, RemoteListener, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
+import { count, tildify } from "@/lib/format";
 import { isUp } from "@/lib/grouping";
+import { containerImpact, type Impact, processImpact, remoteImpact } from "@/lib/impact";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "./confirm";
 
 /** Lets any action button trigger an immediate re-scan after it acts. */
 export const RefreshContext = createContext<() => void>(() => {});
+
+/** The latest scans, so a confirmation can say what else a stop takes down. */
+export const ScanContext = createContext<{ snap?: Snapshot; remote?: RemoteSnapshot[] }>({});
+
+/** "Also goes down": other ports, child processes, and tunnels or forwards left pointing at nothing. */
+function ImpactNote({ impact, port, localTunnels = [] }: { impact?: Impact; port?: number; localTunnels?: PortRow[] }) {
+  const ports = (impact?.ports ?? []).filter((r) => r.port !== port);
+  const lines = [
+    ports.length > 0 && `${count(ports.length, "more port")}: ${[...new Set(ports.map((r) => `:${r.port}`))].join(" ")}`,
+    !!impact?.otherProcesses &&
+      `${impact.otherProcesses} more ${impact.otherProcesses === 1 ? "process" : "processes"} of this server (dev CLI, workers, watchers)`,
+    ...(impact?.tunnels ?? []).map((t) => `${t.kind}${t.publicUrl ? ` ${t.publicUrl}` : ""} stops working`),
+    ...(impact?.reverseForwards ?? []).map((f) => `ssh -R ${f.spec} on ${f.target} stops working`),
+    ...localTunnels.map((r) => `local tunnel :${r.port} (ssh ${r.sshTarget}) leads nowhere`),
+  ].filter(Boolean);
+  if (lines.length === 0) return null;
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+      <p className="font-medium">Also goes down</p>
+      <ul className="mt-1 list-disc pl-4">
+        {lines.map((l) => (
+          <li key={l as string}>{l}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /** A remote host whose processes and containers are acted on over ssh. */
 export type RemoteHostRef = { id: number; name: string };
@@ -128,13 +156,15 @@ export function SshStop({ pid, stopPid, target, note }: { pid: number; stopPid: 
   );
 }
 
-function KillDescription({ pid, viaCli, port, command, folder, host }: {
+function KillDescription({ pid, viaCli, port, command, folder, host, children }: {
   pid: number;
   viaCli: boolean;
   port: number;
   command?: string;
   folder?: string;
   host?: string;
+  /** the impact note */
+  children?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -145,6 +175,7 @@ function KillDescription({ pid, viaCli, port, command, folder, host }: {
       </p>
       {command && <code className="block rounded bg-muted p-2 font-mono text-xs break-all">{tildify(command)}</code>}
       {folder && <p className="font-mono text-xs">{tildify(folder)}</p>}
+      {children}
     </div>
   );
 }
@@ -164,17 +195,35 @@ export function PortStop({ row, procs }: { row: PortRow; procs: Map<number, Loca
   }
   const viaCli = row.stopPid !== row.pid;
   return (
-    <KillButton
-      pid={row.stopPid}
+    <ProcessStop
+      stopPid={row.stopPid}
+      port={row.port}
       title={`Kill :${row.port}${row.project ? ` (${row.project.name})` : ""}`}
+      viaCli={viaCli}
+      command={viaCli ? procs.get(row.pid)?.parentCommand : row.owner}
+      folder={row.folder}
+    />
+  );
+}
+
+/** Kill a local server by its stop pid, saying what else goes down with it. Used by port rows and the Overview. */
+export function ProcessStop({ stopPid, port, title, viaCli, command, folder }: {
+  stopPid: number;
+  port: number;
+  title: string;
+  viaCli: boolean;
+  command?: string;
+  folder?: string;
+}) {
+  const { snap } = use(ScanContext);
+  return (
+    <KillButton
+      pid={stopPid}
+      title={title}
       description={
-        <KillDescription
-          pid={row.stopPid}
-          viaCli={viaCli}
-          port={row.port}
-          command={viaCli ? procs.get(row.pid)?.parentCommand : row.owner}
-          folder={row.folder}
-        />
+        <KillDescription pid={stopPid} viaCli={viaCli} port={port} command={command} folder={folder}>
+          <ImpactNote impact={snap && processImpact(snap, stopPid)} port={port} />
+        </KillDescription>
       }
     />
   );
@@ -182,14 +231,29 @@ export function PortStop({ row, procs }: { row: PortRow; procs: Map<number, Loca
 
 /** Kill control for a port on a remote host; the server re-checks the pid against a fresh probe. */
 export function RemotePortStop({ listener: l, host }: { listener: RemoteListener; host: RemoteHostRef }) {
+  const { snap, remote } = use(ScanContext);
   if (!l.stopPid) return null;
   const viaCli = l.stopPid !== l.pid;
+  const probe = remote?.find((h) => h.id === host.id);
+  // the other ports this stop takes down on that host, and the local tunnels that lead to any of them
+  const siblings = (probe?.listeners ?? []).filter((x) => x.stopPid === l.stopPid);
+  const impact: Impact = {
+    ports: siblings.map((x) => ({ port: x.port }) as PortRow),
+    otherProcesses: 0,
+    tunnels: [],
+    reverseForwards: [],
+  };
+  const tunnels = remoteImpact(probe, [...new Set([l.port, ...siblings.map((x) => x.port)])], snap?.ports ?? []);
   return (
     <KillButton
       pid={l.stopPid}
       host={host}
       title={`Kill :${l.port} on ${host.name}`}
-      description={<KillDescription pid={l.stopPid} viaCli={viaCli} port={l.port} command={viaCli ? undefined : l.command} folder={l.cwd} host={host.name} />}
+      description={
+        <KillDescription pid={l.stopPid} viaCli={viaCli} port={l.port} command={viaCli ? undefined : l.command} folder={l.cwd} host={host.name}>
+          <ImpactNote impact={impact} port={l.port} localTunnels={tunnels} />
+        </KillDescription>
+      }
     />
   );
 }
@@ -215,8 +279,18 @@ export function ContainerActionButton({
   host?: RemoteHostRef;
   label?: string;
 }) {
+  const { snap, remote } = use(ScanContext);
   const a = CONTAINER_ACTIONS[action];
   const on = host ? ` on ${host.name}` : "";
+  const ids = cs.map((c) => c.id);
+  const remotePorts = cs.flatMap((c) => c.ports.map((p) => p.hostPort));
+  const impact =
+    // a restart comes back, so only a stop leaves anything pointing at nothing
+    action !== "stop" ? null : host ? (
+      <ImpactNote localTunnels={remoteImpact(remote?.find((h) => h.id === host.id), remotePorts, snap?.ports ?? [])} />
+    ) : (
+      <ImpactNote impact={snap && { ...containerImpact(snap, ids), ports: [] }} />
+    );
   const what = cs.length === 1 ? cs[0].name : `${cs[0].group ?? "containers"} (${cs.length} containers)`;
   const recreate = cs[0].kind === "supabase" ? "supabase start" : cs[0].kind === "compose" ? "docker compose up -d" : "docker start";
   return (
@@ -226,6 +300,7 @@ export function ContainerActionButton({
       label={label}
       title={`${a.verb} ${what}${on}`}
       description={
+        <div className="flex flex-col gap-2">
         <p>
           Runs <code className="font-mono">docker {action}</code>
           {host ? ` on ${host.name} over ssh,` : ""} on {cs.length === 1 ? cs[0].name : `${cs.length} containers`}.
@@ -238,10 +313,12 @@ export function ContainerActionButton({
           )}
           {action === "restart" && " It is briefly unavailable while it restarts."}
         </p>
+        {impact}
+        </div>
       }
       confirmLabel={a.verb}
       destructive={a.destructive}
-      run={() => containerAction(action, cs.map((c) => c.id), host?.id)}
+      run={() => containerAction(action, ids, host?.id)}
       done={() => `${a.done} ${what}${on}`}
     />
   );

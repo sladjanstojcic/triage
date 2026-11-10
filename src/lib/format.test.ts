@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatBytes, shortCommand, shortUptime, since } from "./format";
+import { elapsedSeconds, formatBytes, formatMem, humanElapsed, shortCommand, shortUptime, since } from "./format";
 
 const cases: [string, string][] = [
   // node + CLI from node_modules/.bin, including a folder with a space in it
@@ -67,4 +67,17 @@ test("tabFromPath: known tab, root and unknown paths", async () => {
   assert.equal(tabFromPath("/remote/"), "remote");
   assert.equal(tabFromPath("/"), "overview");
   assert.equal(tabFromPath("/nope"), "overview");
+});
+
+test("elapsedSeconds and humanElapsed read the same ps etime forms", () => {
+  assert.equal(elapsedSeconds("05:07"), 307);
+  assert.equal(elapsedSeconds("02:05:07"), 2 * 3600 + 307);
+  assert.equal(elapsedSeconds("3-02:05:07"), 3 * 86400 + 2 * 3600 + 307);
+  assert.equal(elapsedSeconds(""), undefined);
+  assert.equal(humanElapsed("3-02:05:07"), "3d 2h");
+});
+
+test("formatMem: MiB from ps and docker stats", () => {
+  assert.equal(formatMem(850), "850 MB");
+  assert.equal(formatMem(1536), "1.5 GB");
 });

@@ -38,11 +38,11 @@ export function parseBattery(text: string): MachineInfo["battery"] {
   return { percent: Number(m[1]), charging: state === "charging" || state === "charged" || state === "finishing charge", remaining };
 }
 
-/** "34.55GB", "6.361MB", "0B" → bytes (docker uses powers of 1000). */
+/** "34.55GB", "6.361MB", "0B" → bytes (docker uses powers of 1000, except memory in `docker stats`: "45.41MiB"). */
 export function parseSize(text: string): number {
-  const m = text.trim().match(/^([\d.]+)\s*([kKMGT]?B)$/);
+  const m = text.trim().match(/^([\d.]+)\s*([kKMGT]i?B)$/);
   if (!m) return 0;
-  const unit = { B: 1, kB: 1e3, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12 }[m[2]] ?? 1;
+  const unit = { B: 1, kB: 1e3, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3, TiB: 1024 ** 4 }[m[2]] ?? 1;
   return Number(m[1]) * unit;
 }
 

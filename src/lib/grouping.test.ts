@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ContainerSummary, PortRow, RemoteSnapshot } from "./collect/types";
-import { localTunnel, remoteTarget, sshMachines, sshUser, visibleContainers } from "./grouping";
+import type { ContainerSummary, LocalProcess, PortRow, RemoteSnapshot } from "./collect/types";
+import { localTunnel, remoteTarget, sshMachines, sshUser, usageOf, visibleContainers } from "./grouping";
 
 const host = {
   id: 1,
@@ -77,4 +77,15 @@ test("visibleContainers: running, stopped members of a live stack, recently stop
     now,
   );
   assert.deepEqual(shown.map((x) => x.name), ["web", "worker", "db"]);
+});
+
+test("usageOf: one server counts once with its whole tree, plus its containers", () => {
+  const proc = (pid: number, stopPid: number) =>
+    ({ pid, stopPid, stopTree: { pids: [stopPid, pid], cpu: 2.5, memMB: 1200 } }) as LocalProcess;
+  const port = (p: number, pid: number) => ({ port: p, pid, ownerKind: "process" }) as PortRow;
+  const docker = { port: 54321, pid: 9, ownerKind: "docker" } as PortRow;
+  assert.deepEqual(
+    usageOf([port(3000, 11), port(3001, 12), docker], [{ cpu: 0.5, memMB: 300 }, {}], [proc(11, 10), proc(12, 10)]),
+    { cpu: 3, memMB: 1500 },
+  );
 });
