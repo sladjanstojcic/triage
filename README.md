@@ -11,7 +11,7 @@
   <a href="https://github.com/sladjanstojcic/triage/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/sladjanstojcic/triage?style=flat-square"></a>
 </p>
 
-**One local page that shows everything running on your Mac and your remote dev servers while you juggle several projects at once.**
+**One local page, or a macOS app, that shows everything running on your Mac and your remote dev servers while you juggle several projects at once.**
 
 Every listening port, dev server, Docker container, SSH tunnel and remote host, grouped by the project folder it belongs to, with who started it and stop buttons that ask before acting.
 
@@ -26,7 +26,8 @@ When several agents, editors and terminals each start their own `next dev`, `vit
 
 - What is on port 3000, and which project is it?
 - Why does my app say the port is in use?
-- Which of these servers belong to a terminal I already closed?
+- Which of these servers belong to a terminal I already closed, and which have sat idle for a day?
+- If I stop this, what else goes down with it?
 - Is that tunnel still connected, and what does it reach on the VPS?
 - Why is my disk full? (Docker. It's usually Docker.)
 
@@ -46,7 +47,7 @@ Every listening port grouped by project folder, with git branch, worktree badge 
 
 ### Ports
 
-A flat table of every listening TCP port and what owns it: a process, a Docker or Supabase container (mapped through Docker Desktop or OrbStack), or an SSH `-L` forward. System services stay hidden until you click **Show system**.
+A flat table of every listening TCP port and what owns it: a process, a Docker or Supabase container (mapped through Docker Desktop, OrbStack, Colima or Podman), or an SSH `-L` forward. System services stay hidden until you click **Show system**.
 
 ![Ports tab: every listening port with its type, command line and project folder](docs/screenshots/ports.png)
 
@@ -85,7 +86,8 @@ This works locally and on remote hosts (over SSH, with `sudo -n` if needed). The
 - **macOS** (uses `lsof` and `ps`)
 - **Node.js 20.19+ (not 21) or 22.12+** (required by Vite 8)
 - **pnpm 12** (pinned in `package.json`): `npm install -g pnpm@12`
-- Optional: Docker Desktop or OrbStack, Tailscale, SSH. Anything missing is skipped.
+- Optional: a Docker runtime (Docker Desktop, OrbStack, Colima or Podman), Tailscale, SSH. Anything missing is skipped.
+- Desktop app only: Node.js 22.12+ to build it (Electron 45)
 - Remote hosts: Linux with `ss`, reachable with key-based SSH auth
 
 ## Getting started
@@ -103,6 +105,7 @@ Open <http://127.0.0.1:4777>. Each tab has its own path (`/overview`, `/projects
 | --- | --- |
 | `pnpm dev` | Vite + API server with hot reload |
 | `pnpm build && pnpm start` | Production build, same address |
+| `pnpm desktop` | Build and open the desktop app |
 | `pnpm typecheck && pnpm lint && pnpm test` | Checks |
 
 ### Keep it running in the background
@@ -125,6 +128,8 @@ pnpm desktop:package     # build release/mac-arm64/Triage.app; drag it to /Appli
 
 The app starts its own server on port 4777, so stop `pnpm dev` or the LaunchAgent (`pnpm service:uninstall`) first. Closing the window keeps it running; quit with ⌘Q. Links to dev servers open in your browser.
 
+The app isn't signed or notarized yet. One you build yourself opens normally; a copy moved to another Mac is blocked the first time; allow it under System Settings → Privacy & Security → Open Anyway.
+
 ## Configuration
 
 | Setting | Default | Purpose |
@@ -146,7 +151,11 @@ Don't expose it through a tunnel or reverse proxy.
 
 ## Tech stack
 
-React 19, Vite, Tailwind CSS 4 and shadcn/ui (Base UI) in the browser. A small Node HTTP server (`src/server`) collects data with `lsof`, `ps`, `sysctl`, `vm_stat`, `df`, `pmset`, `docker`, `git`, `ssh` and `tailscale`.
+React 19, Vite, Tailwind CSS 4 and shadcn/ui (Base UI) in the browser. A small Node HTTP server (`src/server`) collects data with `lsof`, `ps`, `sysctl`, `vm_stat`, `df`, `pmset`, `docker` (including `docker stats` for container CPU and memory), `git`, `ssh` and `tailscale`. The desktop app (`src/desktop`) is Electron, packaged with electron-builder.
+
+## Roadmap
+
+Planned work, with notes on competitors and the market, is in [docs/roadmap.md](docs/roadmap.md) (in Serbian).
 
 ## License
 
