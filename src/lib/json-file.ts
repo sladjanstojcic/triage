@@ -17,9 +17,9 @@ export function jsonFile<T>(file: string, missing: T) {
   let queue: Promise<unknown> = Promise.resolve();
   return {
     read: () => readJson(file, missing),
-    update(fn: (value: T) => T | null): Promise<boolean> {
+    update(fn: (value: T) => T | null | Promise<T | null>): Promise<boolean> {
       const next = queue.then(async () => {
-        const value = fn(await readJson(file, missing));
+        const value = await fn(await readJson(file, missing));
         if (value === null) return false;
         await mkdir(path.dirname(file), { recursive: true });
         const tmp = `${file}.tmp`;

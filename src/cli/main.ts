@@ -17,6 +17,9 @@ const HELP = `triage ${pkg.version}: what runs on this Mac, from a terminal or a
   triage who <port>            what is on a port, who started it, what a stop takes down
   triage stop <port>           stop it after showing what else goes down
         [--yes] [--force]      --yes skips the question, --force sends SIGKILL
+  triage reserve <for>         reserve a free port and print it: PORT=$(triage reserve "shop web")
+        [--port=N] [--minutes=M]  try N first; hold it M minutes (default 60)
+  triage release <port>        give a reserved port back
   triage mcp                   MCP server on stdio, for coding agents
 
   --json        machine-readable output (status, ports, who)
@@ -126,6 +129,26 @@ async function main(argv: string[]) {
     if ("pid" in plan.target) await api.stopProcess(plan.target.pid, flags.has("--force"));
     else await api.stopContainers(plan.target.containerIds);
     return console.log("Stopped");
+  }
+
+  if (command === "reserve") {
+    if (!arg) throw new Error('Say what it is for: triage reserve "shop web"');
+    const opt = (name: string) => argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1];
+    const res = await api.reservePort({
+      for: arg,
+      ...(opt("port") && { preferred: Number(opt("port")) }),
+      ...(opt("minutes") && { minutes: Number(opt("minutes")) }),
+    });
+    // just the number on stdout, so a script can use it; when it runs out on stderr
+    if (!json) console.error(`Reserved for "${arg}" until ${new Date(res.until).toLocaleTimeString()}`);
+    return console.log(json ? JSON.stringify(res, null, 2) : res.port);
+  }
+
+  if (command === "release") {
+    const n = Number(arg);
+    if (!(Number.isInteger(n) && n > 0 && n < 65536)) throw new Error("Usage: triage release <port>");
+    await api.releasePort(n);
+    return console.log(`Released :${n}`);
   }
 
   throw new Error(`Unknown command ${command}. Run triage --help.`);

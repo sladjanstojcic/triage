@@ -5,6 +5,7 @@ import { collectContainers } from "./docker";
 import { collectListeningProcesses, listProcesses } from "./local";
 import { cachedDockerDisk, collectMachine } from "./machine";
 import { readPortPrefs } from "@/lib/port-prefs";
+import { dropExpired } from "@/lib/reserve";
 import { cachedProtocol, protocolFromPort } from "./protocol";
 import { collectSsh } from "./ssh";
 import { collectTailscale, collectTunnels } from "./tunnels";
@@ -53,6 +54,7 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
       rows.push({
         ...base, ownerKind: "process", owner: p.command, folder: p.cwd, project: p.project, tech: p.tech,
         system, stopPid: system || self ? undefined : p.stopPid,
+        ...(!system && p.origin?.brewService && { brewService: p.origin.brewService }),
         // macOS services and apps aren't probed: their ports are hidden by default and none is a dev server
         protocol: system ? undefined : cachedProtocol(p.pid, l.port, l.address, `${p.tech ?? ""} ${p.command}`),
       });
@@ -75,7 +77,8 @@ export async function collectSnapshot(): Promise<Snapshot> {
     collectContainers(),
     collectTailscale(),
     collectMachine(),
-    readPortPrefs().catch(() => ({})),
+    // a reservation that ran out is gone for every reader; the file drops it on the next reservation
+    readPortPrefs().then((prefs) => dropExpired(prefs, new Date().toISOString())).catch(() => ({})),
   ]);
   if (listening.error) errors.push(`lsof: ${listening.error}`);
   if (docker.error) errors.push(docker.error);

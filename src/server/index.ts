@@ -9,6 +9,8 @@ import {
   containerAction,
   containerLogs,
   dockerPrune,
+  releasePort,
+  reserveFreePort,
   updatePortPref,
   probeRemoteHosts,
   remoteContainerAction,
@@ -18,7 +20,7 @@ import {
 } from "./actions";
 import { history, record } from "./history-store";
 
-const ACTIONS: ContainerAction[] = ["start", "stop", "restart"];
+const ACTIONS: ContainerAction[] = ["start", "stop", "restart", "pause", "unpause"];
 
 /** Requests that arrive while `fn` runs (another tab, a poll overlapping a slow scan) share its result. */
 function shared<T>(fn: () => Promise<T>) {
@@ -101,7 +103,7 @@ async function api(req: IncomingMessage, res: ServerResponse, pathname: string):
     return json(res, 200, await stopProcess(body.pid, body.force === true)), true;
   }
   if (route === "POST /api/containers" || route === "POST /api/remote/containers") {
-    if (!ACTIONS.includes(body.action as ContainerAction)) throw new HttpError(400, "action must be start, stop or restart");
+    if (!ACTIONS.includes(body.action as ContainerAction)) throw new HttpError(400, "action must be start, stop, restart, pause or unpause");
     if (!Array.isArray(body.ids) || !body.ids.every((id) => typeof id === "string")) {
       throw new HttpError(400, "ids must be an array of strings");
     }
@@ -119,6 +121,8 @@ async function api(req: IncomingMessage, res: ServerResponse, pathname: string):
   if (route === "POST /api/ports/pref") {
     return json(res, 200, await updatePortPref(Number(body.port), body)), true;
   }
+  if (route === "POST /api/ports/reserve") return json(res, 200, await reserveFreePort(body)), true;
+  if (route === "POST /api/ports/release") return json(res, 200, await releasePort(Number(body.port))), true;
   if (route === "POST /api/docker/prune") {
     if (body.hostId !== undefined && typeof body.hostId !== "number") throw new HttpError(400, "hostId must be a number");
     return json(res, 200, await dockerPrune(body.hostId)), true;

@@ -45,6 +45,34 @@ export function newAlerts(
   return fresh;
 }
 
+/** One watched port that started or stopped listening between two scans. */
+export type WatchChange = { port: number; up: boolean; what: string };
+
+/** Each port you watch, with what listens on it now ("" for nothing). */
+export function watchedPorts(snap: Snapshot): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const [port, pref] of Object.entries(snap.portPrefs ?? {})) {
+    if (!pref.watched) continue;
+    const row = snap.ports.find((r) => r.port === Number(port));
+    out.set(Number(port), row ? (row.ownerKind === "process" ? portOwnerName(row) : row.owner) : "");
+  }
+  return out;
+}
+
+/**
+ * Watched ports that started or stopped listening since `before`. A port only just watched has no
+ * before, so watching a port doesn't announce it; a server restarting between two scans isn't a change.
+ */
+export function watchChanges(before: Map<number, string>, after: Map<number, string>): WatchChange[] {
+  const changes: WatchChange[] = [];
+  for (const [port, what] of after) {
+    const was = before.get(port);
+    if (was === undefined || !was === !what) continue;
+    changes.push({ port, up: !!what, what: what || was });
+  }
+  return changes;
+}
+
 /** A dev server running this long that isn't using the CPU was most likely left behind. */
 export const FORGOTTEN_AFTER_S = 24 * 3600;
 const IDLE_CPU = 1;

@@ -48,7 +48,7 @@ export function ProjectsView({ snap, showSystem, conflicts }: { snap: Snapshot; 
       key: `${p.pid}-${p.port}`,
       className: cn(conflicts.has(p.port) && "bg-destructive/5"),
       cells: [
-        <PortCell key="port" port={p.port} address={p.address} protocol={p.protocol} pinned={pref.pinned} hint={`${p.tech ?? ""} ${p.owner}`} />,
+        <PortCell key="port" port={p.port} address={p.address} protocol={p.protocol} pinned={pref.pinned} watched={pref.watched} hint={`${p.tech ?? ""} ${p.owner}`} />,
         <TechBadge key="type" tech={p.tech} />,
         <Fragment key="what">
           <ConflictBadge row={p} conflicts={conflicts} />

@@ -1,4 +1,4 @@
-import { PlayIcon, RotateCcwIcon, SquareIcon, Trash2Icon, UnplugIcon, XIcon } from "lucide-react";
+import { PauseIcon, PlayIcon, RotateCcwIcon, SquareIcon, Trash2Icon, UnplugIcon, XIcon } from "lucide-react";
 import { createContext, use, useState } from "react";
 import { toast } from "sonner";
 import { containerAction, dockerPrune, stopProcess, stopRemoteProcess } from "@/lib/api";
@@ -187,6 +187,7 @@ export function PortStop({ row, procs }: { row: PortRow; procs: Map<number, Loca
       />
     );
   }
+  if (row.brewService) return <BrewStop pid={row.stopPid} formula={row.brewService} port={row.port} />;
   const viaCli = row.stopPid !== row.pid;
   return (
     <ProcessStop
@@ -196,6 +197,31 @@ export function PortStop({ row, procs }: { row: PortRow; procs: Map<number, Loca
       viaCli={viaCli}
       command={viaCli ? procs.get(row.pid)?.parentCommand : row.owner}
       folder={row.folder}
+    />
+  );
+}
+
+/** Stop a Homebrew service with brew: killing its process would only make launchd start it again. */
+function BrewStop({ pid, formula, port }: { pid: number; formula: string; port: number }) {
+  const { snap } = use(ScanContext);
+  const also = snap ? impactLines(processImpact(snap, pid), port) : [];
+  return (
+    <ActionButton
+      icon={SquareIcon}
+      filled
+      title={`Stop brew service ${formula}`}
+      description={
+        <div className="flex flex-col gap-2">
+          <p>
+            Runs <code className="font-mono">brew services stop {formula}</code>. Killing the process wouldn't help: launchd starts it again. It
+            won't start at login either, until <code className="font-mono">brew services start {formula}</code>.
+          </p>
+          {also.length > 0 && <p>Also goes down: {also.join("; ")}.</p>}
+        </div>
+      }
+      confirmLabel="Stop"
+      run={() => stopProcess(pid)}
+      done={() => `Stopped ${formula}`}
     />
   );
 }
@@ -256,10 +282,12 @@ const CONTAINER_ACTIONS: Record<ContainerAction, { icon: Icon; filled: boolean; 
   stop: { icon: SquareIcon, filled: true, verb: "Stop", done: "Stopped", destructive: true },
   restart: { icon: RotateCcwIcon, filled: false, verb: "Restart", done: "Restarted", destructive: false },
   start: { icon: PlayIcon, filled: true, verb: "Start", done: "Started", destructive: false },
+  pause: { icon: PauseIcon, filled: false, verb: "Pause", done: "Paused", destructive: false },
+  unpause: { icon: PlayIcon, filled: false, verb: "Resume", done: "Resumed", destructive: false },
 };
 
 /**
- * docker start / stop / restart for one container or a group. The title comes from what the action really
+ * docker start / stop / restart / pause / unpause for one container or a group. The title comes from what the action really
  * touches, so a filtered group never claims to act on the whole stack.
  */
 export function ContainerActionButton({
@@ -306,6 +334,8 @@ export function ContainerActionButton({
             </>
           )}
           {action === "restart" && " It is briefly unavailable while it restarts."}
+          {action === "pause" && " Its processes freeze: it keeps its memory and connections but answers nothing until you resume it."}
+          {action === "unpause" && " Its processes carry on where they stopped."}
         </p>
         {impact}
         </div>
@@ -318,13 +348,20 @@ export function ContainerActionButton({
   );
 }
 
-/** A container row's actions: Restart and Stop while it's up, Start once it's stopped. */
+/** A container row's actions: Pause, Restart and Stop while it runs, Resume and Stop while paused, Start once stopped. */
 export function ContainerRowActions({ container: c, host }: { container: ContainerSummary; host?: RemoteHostRef }) {
   return (
     <div className="flex justify-end">
       {isUp(c) ? (
         <>
-          <ContainerActionButton action="restart" containers={[c]} host={host} />
+          {c.state === "paused" ? (
+            <ContainerActionButton action="unpause" containers={[c]} host={host} />
+          ) : (
+            <>
+              <ContainerActionButton action="pause" containers={[c]} host={host} />
+              <ContainerActionButton action="restart" containers={[c]} host={host} />
+            </>
+          )}
           <ContainerActionButton action="stop" containers={[c]} host={host} />
         </>
       ) : (

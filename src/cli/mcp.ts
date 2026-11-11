@@ -67,6 +67,37 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
+  {
+    name: "reserve_port",
+    title: "Reserve a free port",
+    description:
+      "A free port for a server you are about to start, held for you so no other agent is handed it before your server listens. " +
+      "Free means nothing listens on it, on any address, and nothing else holds it. Start your server on the returned port, " +
+      "and release it with release_port if you don't use it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        for: { type: "string", maxLength: 80, description: "Who and what it is for, shown in Triage: \"shop web, Claude Code\"" },
+        preferred: { type: "integer", minimum: 1024, maximum: 65535, description: "Try this port first (default: from 3000 up)" },
+        minutes: { type: "integer", minimum: 1, maximum: 1440, description: "How long to hold it (default 60)" },
+      },
+      required: ["for"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: "release_port",
+    title: "Release a reserved port",
+    description: "Give back a port reserved with reserve_port. It doesn't stop anything listening on it.",
+    inputSchema: {
+      type: "object",
+      properties: { port: { type: "integer", minimum: 1, maximum: 65535 } },
+      required: ["port"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
 ];
 
 type Args = Record<string, unknown>;
@@ -75,7 +106,7 @@ type Client = ReturnType<typeof triageClient>;
 /** A tool's result as data; thrown errors become an error result the agent can read. */
 async function callTool(api: Client, name: string, args: Args): Promise<unknown> {
   const port = Number(args.port);
-  if ((name === "who_is_on_port" || name === "stop_port") && !(Number.isInteger(port) && port > 0 && port < 65536)) {
+  if ((name === "who_is_on_port" || name === "stop_port" || name === "release_port") && !(Number.isInteger(port) && port > 0 && port < 65536)) {
     throw new Error("port must be a whole number from 1 to 65535");
   }
   if (name === "list_ports") return portReports(await api.snapshot(), args.all === true);
@@ -98,6 +129,18 @@ async function callTool(api: Client, name: string, args: Args): Promise<unknown>
     if ("pid" in plan.target) await api.stopProcess(plan.target.pid, args.force === true);
     else await api.stopContainers(plan.target.containerIds);
     return { stopped: true, title: plan.title, alsoWentDown: plan.alsoGoesDown };
+  }
+  if (name === "reserve_port") {
+    const { port, until } = await api.reservePort({
+      for: String(args.for ?? ""),
+      ...(args.preferred !== undefined && { preferred: Number(args.preferred) }),
+      ...(args.minutes !== undefined && { minutes: Number(args.minutes) }),
+    });
+    return { port, reservedUntil: until, url: `http://localhost:${port}` };
+  }
+  if (name === "release_port") {
+    await api.releasePort(port);
+    return { released: port };
   }
   throw new Error(`Unknown tool ${name}`);
 }

@@ -55,6 +55,15 @@ test("macOS: launchd job", () => {
   assert.deepEqual(origin(rows, 500, { XPC_SERVICE_NAME: "dev.triage.app" }), { app: "launchd", detached: false });
 });
 
+test("macOS: a Homebrew service names its formula", () => {
+  const rows: [number, number, string, string][] = [[600, 1, "??", "/opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16"]];
+  assert.deepEqual(origin(rows, 600, { XPC_SERVICE_NAME: "homebrew.mxcl.postgresql@16" }), {
+    app: "brew services", detached: false, brewService: "postgresql@16",
+  });
+  // anything that isn't a plain formula name is not taken as one
+  assert.equal(origin(rows, 600, { XPC_SERVICE_NAME: "homebrew.mxcl.x;rm" })?.brewService, undefined);
+});
+
 test("Linux: dev server in a live ssh session, under tmux, run by Claude Code", () => {
   const rows: [number, number, string, string][] = [
     [1, 0, "?", "/sbin/init"],
