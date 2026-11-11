@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PortRow, RemoteSnapshot, Snapshot } from "./collect/types";
-import { containerImpact, processImpact, remoteImpact, targetPort } from "./impact";
+import { containerImpact, impactLines, processImpact, remoteImpact, targetPort } from "./impact";
 
 const row = (port: number, pid: number, over: Partial<PortRow> = {}): PortRow => ({
   port, address: "127.0.0.1", ownerKind: "process", pid, processName: "node", owner: "node", system: false, ...over,
@@ -86,4 +86,25 @@ test("stopping something on a VPS: the local ssh -L forwards to its ports", () =
   ];
   assert.deepEqual(remoteImpact(host, [5432, 8080], local).map((r) => r.port), [15432]);
   assert.deepEqual(remoteImpact(undefined, [5432], local), []);
+});
+
+test("impactLines: the other ports once each, the rest of the tree, and what points at nothing", () => {
+  const lines = impactLines(
+    {
+      ports: [row(3000, 101), row(3000, 101, { address: "::1" }), row(3001, 102)],
+      otherProcesses: 2,
+      tunnels: [{ kind: "cloudflared", detail: "", publicUrl: "https://x.trycloudflare.com" }],
+      reverseForwards: [{ target: "vps", spec: "8080:localhost:3000" }],
+    },
+    3000,
+    [row(15432, 900, { ownerKind: "ssh", sshTarget: "vps" })],
+  );
+  assert.deepEqual(lines, [
+    "1 more port: :3001",
+    "2 more processes of this server (dev CLI, workers, watchers)",
+    "cloudflared https://x.trycloudflare.com stops working",
+    "ssh -R 8080:localhost:3000 on vps stops working",
+    "local tunnel :15432 (ssh vps) leads nowhere",
+  ]);
+  assert.deepEqual(impactLines(undefined), []);
 });

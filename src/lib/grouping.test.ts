@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ContainerSummary, LocalProcess, PortRow, RemoteSnapshot } from "./collect/types";
-import { localTunnel, remoteTarget, sshMachines, sshUser, usageOf, visibleContainers } from "./grouping";
+import type { ContainerSummary, LocalProcess, PortRow, RemoteSnapshot, Snapshot } from "./collect/types";
+import { groupByProject, hiddenCount, localTunnel, remoteTarget, sortedPorts, sshMachines, sshUser, usageOf, visibleContainers } from "./grouping";
 
 const host = {
   id: 1,
@@ -88,4 +88,20 @@ test("usageOf: one server counts once with its whole tree, plus its containers",
     usageOf([port(3000, 11), port(3001, 12), docker], [{ cpu: 0.5, memMB: 300 }, {}], [proc(11, 10), proc(12, 10)]),
     { cpu: 3, memMB: 1500 },
   );
+});
+
+test("port prefs: hidden ports leave the lists until Show hidden, pinned ones come first", () => {
+  const port = (n: number, project: string, over: Partial<PortRow> = {}): PortRow => ({
+    port: n, address: "127.0.0.1", ownerKind: "process", pid: n, processName: "node", owner: "node", system: false,
+    project: { root: `/p/${project}`, name: project, isWorktree: false }, ...over,
+  });
+  const snap: Snapshot = {
+    at: "", hostname: "mbpro", processes: [], containers: [], ssh: [], tunnels: [], machine: { hostname: "mbpro" }, errors: [],
+    ports: [port(3000, "alpha"), port(4000, "beta"), port(4777, "triage"), port(22, "sshd", { system: true, project: undefined })],
+    portPrefs: { 4000: { pinned: true }, 4777: { hidden: true } },
+  };
+  assert.deepEqual(sortedPorts(snap, false).map((p) => p.port), [4000, 3000]);
+  assert.deepEqual(sortedPorts(snap, true).map((p) => p.port), [4000, 22, 3000, 4777]);
+  assert.deepEqual(groupByProject(snap, false).map((g) => g.title), ["beta", "alpha"]);
+  assert.equal(hiddenCount(snap), 1);
 });

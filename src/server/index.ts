@@ -7,12 +7,16 @@ import type { ContainerAction } from "@/lib/collect/types";
 import {
   addRemoteHost,
   containerAction,
+  containerLogs,
+  dockerPrune,
+  updatePortPref,
   probeRemoteHosts,
   remoteContainerAction,
   removeRemoteHost,
   stopProcess,
   stopRemoteProcess,
 } from "./actions";
+import { history, record } from "./history-store";
 
 const ACTIONS: ContainerAction[] = ["start", "stop", "restart"];
 
@@ -21,7 +25,12 @@ function shared<T>(fn: () => Promise<T>) {
   let running: Promise<T> | undefined;
   return () => (running ??= fn().finally(() => (running = undefined)));
 }
-const snapshot = shared(collectSnapshot);
+// each scan the dashboard asks for is compared with the one before, for the History tab
+const snapshot = shared(async () => {
+  const snap = await collectSnapshot();
+  void record(snap);
+  return snap;
+});
 const remote = shared(probeRemoteHosts);
 
 const HOST = "127.0.0.1";
@@ -69,6 +78,7 @@ async function api(req: IncomingMessage, res: ServerResponse, pathname: string):
   const route = `${req.method} ${pathname}`;
   if (route === "GET /api/snapshot") return json(res, 200, await snapshot()), true;
   if (route === "GET /api/remote") return json(res, 200, await remote()), true;
+  if (route === "GET /api/history") return json(res, 200, await history("")), true;
   if (!pathname.startsWith("/api/")) return false;
 
   // Everything below changes state. A cross-site page can't send a same-origin Origin header, and
@@ -99,6 +109,19 @@ async function api(req: IncomingMessage, res: ServerResponse, pathname: string):
     if (route === "POST /api/containers") return json(res, 200, await containerAction(action, body.ids)), true;
     if (typeof body.hostId !== "number") throw new HttpError(400, "hostId must be a number");
     return json(res, 200, await remoteContainerAction(body.hostId, action, body.ids)), true;
+  }
+  // read-only, but a container's logs can hold secrets, so it stays behind the Origin check
+  if (route === "POST /api/logs") {
+    if (typeof body.id !== "string") throw new HttpError(400, "id must be a string");
+    if (body.hostId !== undefined && typeof body.hostId !== "number") throw new HttpError(400, "hostId must be a number");
+    return json(res, 200, await containerLogs(body.id, body.hostId)), true;
+  }
+  if (route === "POST /api/ports/pref") {
+    return json(res, 200, await updatePortPref(Number(body.port), body)), true;
+  }
+  if (route === "POST /api/docker/prune") {
+    if (body.hostId !== undefined && typeof body.hostId !== "number") throw new HttpError(400, "hostId must be a number");
+    return json(res, 200, await dockerPrune(body.hostId)), true;
   }
   if (route === "POST /api/remote/stop") {
     if (typeof body.hostId !== "number" || typeof body.pid !== "number") throw new HttpError(400, "hostId and pid must be numbers");

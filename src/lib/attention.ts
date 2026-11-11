@@ -19,7 +19,31 @@ export type AttentionItem = {
   tab?: Tab;
   /** a local process the item offers to stop right there */
   stopPid?: number;
+  /** offers to delete unused Docker images and build cache: on this Mac, or on the remote host with this id */
+  prune?: { hostId?: number };
 };
+
+/** A dev server left running and idle (see forgottenItems); the only "info" item worth a notification. */
+export const isForgotten = (item: AttentionItem) => item.key.includes(":forgotten:");
+
+/**
+ * The items a desktop notification announces: errors and warnings, plus forgotten servers, that weren't
+ * in the previous scan and weren't announced in the last `realertMs`, so a flapping item doesn't repeat.
+ * Updates `announced` with what it returns.
+ */
+export function newAlerts(
+  items: AttentionItem[],
+  previous: Set<string>,
+  announced: Map<string, number>,
+  now = Date.now(),
+  realertMs = 30 * 60_000,
+): AttentionItem[] {
+  const fresh = items.filter(
+    (i) => (i.level !== "info" || isForgotten(i)) && !previous.has(i.key) && now - (announced.get(i.key) ?? -Infinity) >= realertMs,
+  );
+  for (const i of fresh) announced.set(i.key, now);
+  return fresh;
+}
 
 /** A dev server running this long that isn't using the CPU was most likely left behind. */
 export const FORGOTTEN_AFTER_S = 24 * 3600;
@@ -71,6 +95,8 @@ function resourceItems(m: MachineInfo, machine: string): AttentionItem[] {
 }
 
 const RECLAIM_NOTE = 10e9;
+/** `docker system df` rows the prune button frees (see dockerPrune in src/server/actions.ts). */
+export const PRUNABLE = /^(images|build cache)$/i;
 
 export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefined, conflicts: Conflicts): AttentionItem[] {
   const mac = snap.machine.hostname;
@@ -128,7 +154,7 @@ export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefi
       tab: "ports",
     });
   }
-  items.push(...reclaimItem(snap.dockerDisk, mac, snap.machine, "docker"));
+  items.push(...reclaimItem(snap.dockerDisk, mac, snap.machine, "docker", undefined));
 
   for (const h of remote ?? []) {
     if (!h.ok) {
@@ -158,7 +184,7 @@ export function attentionItems(snap: Snapshot, remote: RemoteSnapshot[] | undefi
         items.push({ key: `${h.name}:health:${c.id}`, level: "error", machine: h.name, text: `${c.name} is ${c.health}`, tab: "remote" });
       }
     }
-    items.push(...reclaimItem(h.dockerDisk, h.name, h.machine, "remote"));
+    items.push(...reclaimItem(h.dockerDisk, h.name, h.machine, "remote", h.id));
   }
 
   const rank = { error: 0, warn: 1, info: 2 };
@@ -200,7 +226,13 @@ function forgottenItems(snap: Snapshot, mac: string, sshPids: Set<number>): Atte
 }
 
 /** Docker space that `docker system prune` could free; a warning when the disk is nearly full too. */
-function reclaimItem(rows: Snapshot["dockerDisk"], machine: string, m: MachineInfo | undefined, tab: Tab): AttentionItem[] {
+function reclaimItem(
+  rows: Snapshot["dockerDisk"],
+  machine: string,
+  m: MachineInfo | undefined,
+  tab: Tab,
+  hostId: number | undefined,
+): AttentionItem[] {
   const reclaim = (rows ?? []).reduce((sum, r) => sum + r.reclaimable, 0);
   if (reclaim < RECLAIM_NOTE) return [];
   const diskTight = !!m?.disk && !!usageLevel(pct(m.disk));
@@ -212,6 +244,8 @@ function reclaimItem(rows: Snapshot["dockerDisk"], machine: string, m: MachineIn
       text: `Docker can free ${formatBytes(reclaim)}`,
       detail: "unused images, volumes and build cache (docker system prune)",
       tab,
+      // only images and build cache have a button: they come back with a pull or a build, volumes hold data
+      prune: rows?.some((r) => PRUNABLE.test(r.type) && r.reclaimable > 0) ? { hostId } : undefined,
     },
   ];
 }

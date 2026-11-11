@@ -12,6 +12,9 @@ export type ProjectInfo = {
   mainRepo?: string;
 };
 
+/** What a port speaks, as collect/protocol.ts tells. */
+export type Protocol = "http" | "https" | "postgres" | "mysql" | "redis" | "mongodb" | "ssh" | "smtp" | "pop3" | "imap" | "socks" | "tls" | "tcp";
+
 export type ListenAddr = { address: string; port: number };
 
 /** Who started a listening process (see collect/origin.ts). */
@@ -52,7 +55,14 @@ export type LocalProcess = {
 
 export type ContainerAction = "start" | "stop" | "restart";
 
-export type ContainerPort = { hostIp: string; hostPort: number; containerPort: number; proto: string };
+export type ContainerPort = {
+  hostIp: string;
+  hostPort: number;
+  containerPort: number;
+  proto: string;
+  /** what the published port speaks, from its PortRow (this Mac only) */
+  protocol?: Protocol;
+};
 
 export type Container = {
   id: string;
@@ -74,6 +84,9 @@ export type Container = {
   cpu?: number;
   memMB?: number;
 };
+
+/** One line of `docker logs --timestamps`: when it was written, when docker says so, and the text. */
+export type LogLine = { at?: string; text: string };
 
 /** What the local Docker tab and a remote host both show (and stop) for a container. */
 export type ContainerSummary = Pick<
@@ -146,7 +159,12 @@ export type PortRow = {
   stopPid?: number;
   /** docker-owned ports: the container behind it (pid is only the Docker/OrbStack port proxy) */
   containerId?: string;
+  /** what it speaks (collect/protocol.ts); undefined for system ports and until the first look finishes */
+  protocol?: Protocol;
 };
+
+/** What you set on a port number (port-prefs.ts): pinned to the top, hidden from the lists, a note. */
+export type PortPref = { pinned?: boolean; hidden?: boolean; note?: string };
 
 /** Used and total of a resource, in bytes (memory, swap, disk). */
 export type Usage = { used: number; total: number };
@@ -166,6 +184,8 @@ export type MachineInfo = {
   /** the volume user data lives on */
   disk?: Usage & { mount: string };
   battery?: { percent: number; charging: boolean; remaining?: string };
+  /** connected VPNs by the name macOS shows (Tailscale, ProtonVPN, a WireGuard tunnel…) */
+  vpn?: string[];
 };
 
 /** One row of `docker system df`: images, containers, local volumes or build cache, sizes in bytes. */
@@ -183,6 +203,8 @@ export type Snapshot = {
   machine: MachineInfo;
   /** refreshed every couple of minutes; undefined until the first run, or without docker */
   dockerDisk?: DockerDiskRow[];
+  /** your pins, hidden ports and notes, by port number */
+  portPrefs?: Record<string, PortPref>;
   errors: string[];
 };
 
@@ -194,7 +216,7 @@ export type RemoteListener = {
   cwd?: string;
   command?: string;
   container?: string;
-  /** OS service (sshd, systemd-resolved, tailscaled…), hidden unless "Show system" is on */
+  /** OS service (sshd, systemd-resolved, tailscaled…), hidden unless "Show hidden" is on */
   system: boolean;
   origin?: Origin;
   /** set when it can be stopped from the dashboard: the dev CLI that started it (`next dev`) or the pid itself */

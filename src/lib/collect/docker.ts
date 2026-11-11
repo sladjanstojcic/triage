@@ -2,7 +2,7 @@ import { run } from "@/lib/exec";
 import { visibleContainers } from "@/lib/grouping";
 import { projectFor } from "./local";
 import { parseSize } from "./machine";
-import type { Container, ContainerPort } from "./types";
+import type { Container, ContainerPort, LogLine } from "./types";
 
 type Inspect = {
   Id: string;
@@ -22,6 +22,51 @@ function humanStatus(s: Inspect["State"]): string {
   if (s.Status === "running" && s.StartedAt && !Number.isNaN(Date.parse(s.StartedAt))) return `Up ${ago(s.StartedAt)}`;
   if (s.Status === "exited" && s.FinishedAt && !s.FinishedAt.startsWith("0001")) return `Exited (${s.ExitCode ?? 0}) ${ago(s.FinishedAt)} ago`;
   return s.Status;
+}
+
+/** Lines longer than this are cut: a minified bundle or a JSON dump would swamp the logs drawer. */
+const LOG_LINE_MAX = 4000;
+const LOG_TIME = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)) ?/;
+
+/** `docker logs --timestamps` output → lines; a line without a timestamp (a docker error) keeps the previous one's. */
+export function parseLogs(out: string): LogLine[] {
+  const lines: LogLine[] = [];
+  let at: string | undefined;
+  for (const raw of out.replace(/\r/g, "").split("\n")) {
+    const m = raw.match(LOG_TIME);
+    if (m) at = m[1];
+    const text = m ? raw.slice(m[0].length) : raw;
+    if (!m && !text) continue;
+    lines.push({ at, text: text.length > LOG_LINE_MAX ? `${text.slice(0, LOG_LINE_MAX)} …` : text });
+  }
+  return lines;
+}
+
+/**
+ * docker writes a container's stdout and stderr to separate streams; both are in time order, so merge them
+ * back into one by timestamp (the output side wins ties).
+ */
+export function mergeLogs(stdout: string, stderr: string): LogLine[] {
+  const [a, b] = [parseLogs(stdout), parseLogs(stderr)];
+  const merged: LogLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    const takeA = j >= b.length || (i < a.length && (a[i].at ?? "") <= (b[j].at ?? ""));
+    merged.push(takeA ? a[i++] : b[j++]);
+  }
+  return merged;
+}
+
+/**
+ * What `docker image prune` ("Total reclaimed space: 1.2GB") and `docker builder prune` ("Total: 300MB")
+ * freed, in docker's own units: "1.2GB + 300MB", or "0B".
+ */
+export function parseReclaimed(out: string): string {
+  const parts = [...out.matchAll(/^Total(?: reclaimed space)?:\s*([\d.]+\s*[kMGT]?B)\s*$/gim)]
+    .map((m) => m[1].replace(/\s+/g, ""))
+    .filter((x) => !/^0(\.0+)?B$/i.test(x));
+  return parts.join(" + ") || "0B";
 }
 
 /** `docker stats --format "{{json .}}"` lines → CPU percent and memory (MiB) by short container id. */

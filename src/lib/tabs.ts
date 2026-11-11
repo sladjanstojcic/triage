@@ -6,6 +6,7 @@ export const TABS = [
   { id: "docker", label: "Docker" },
   { id: "ssh", label: "SSH & Tunnels" },
   { id: "remote", label: "Remote" },
+  { id: "history", label: "History" },
 ] as const;
 
 export type Tab = (typeof TABS)[number]["id"];

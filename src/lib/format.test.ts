@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { elapsedSeconds, formatBytes, formatMem, humanElapsed, shortCommand, shortUptime, since } from "./format";
+import { connectionUrl, elapsedSeconds, formatBytes, formatMem, humanElapsed, shortCommand, shortUptime, since } from "./format";
 
 const cases: [string, string][] = [
   // node + CLI from node_modules/.bin, including a folder with a space in it
@@ -80,4 +80,18 @@ test("elapsedSeconds and humanElapsed read the same ps etime forms", () => {
 test("formatMem: MiB from ps and docker stats", () => {
   assert.equal(formatMem(850), "850 MB");
   assert.equal(formatMem(1536), "1.5 GB");
+});
+
+test("connectionUrl: a database URL for database ports, the browser URL otherwise", () => {
+  assert.equal(connectionUrl("127.0.0.1", 3000, "Next.js"), "http://localhost:3000");
+  assert.equal(connectionUrl("*", 5432, "Postgres"), "postgresql://localhost:5432");
+  assert.equal(connectionUrl("*", 54442, "public.ecr.aws/supabase/postgres:17.1"), "postgresql://postgres:postgres@localhost:54442/postgres");
+  assert.equal(connectionUrl("127.0.0.1", 6379, "redis:7"), "redis://localhost:6379");
+  assert.equal(connectionUrl("::1", 3306, "mariadb:11"), "mysql://localhost:3306");
+  assert.equal(connectionUrl("192.168.1.5", 27017, "mongo"), "mongodb://192.168.1.5:27017");
+  // the measured protocol wins over the name; tcp says nothing, so the name decides
+  assert.equal(connectionUrl("127.0.0.1", 8443, "Node", "https"), "https://localhost:8443");
+  assert.equal(connectionUrl("127.0.0.1", 54443, "supabase/postgrest:v12", "http"), "http://localhost:54443");
+  assert.equal(connectionUrl("127.0.0.1", 6380, "redis-server", "tcp"), "redis://localhost:6380");
+  assert.equal(connectionUrl("127.0.0.1", 1080, "", "socks"), "socks5://localhost:1080");
 });
