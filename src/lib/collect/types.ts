@@ -206,6 +206,8 @@ export type Snapshot = {
   /** your pins, hidden ports and notes, by port number */
   portPrefs?: Record<string, PortPref>;
   errors: string[];
+  /** lsof failed, or docker failed while its port proxy listens: ports are missing or misattributed this time */
+  partial?: boolean;
 };
 
 export type RemoteListener = {

@@ -51,8 +51,10 @@ export function HistoryView({ snap, query }: { snap: Snapshot; query: string }) 
   // when the events were fetched: "the last 24 hours" counts back from there, not from each render
   const [loadedAt, setLoadedAt] = useState(0);
   const [error, setError] = useState<string>();
-  const options = useMemo(() => moments(), []);
-  const [then, setThen] = useState(options[0]);
+  // counted from the last load (every 30 s), so "1 hour ago" moves on while the tab stays open
+  const options = useMemo(() => moments(new Date(loadedAt)), [loadedAt]);
+  const [thenLabel, setThen] = useState(options[0].label);
+  const then = options.find((o) => o.label === thenLabel) ?? options[0];
 
   const load = useCallback(async () => {
     try {
@@ -91,7 +93,7 @@ export function HistoryView({ snap, query }: { snap: Snapshot; query: string }) 
               variant={o.label === then.label ? "secondary" : "ghost"}
               disabled={!known(o.at)}
               title={known(o.at) ? undefined : `History starts ${since ? clock(since) : "with the next scan"}`}
-              onClick={() => setThen(o)}
+              onClick={() => setThen(o.label)}
             >
               {o.label}
             </Button>

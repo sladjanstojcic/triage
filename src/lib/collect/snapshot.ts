@@ -5,7 +5,7 @@ import { collectContainers } from "./docker";
 import { collectListeningProcesses, listProcesses } from "./local";
 import { cachedDockerDisk, collectMachine } from "./machine";
 import { readPortPrefs } from "@/lib/port-prefs";
-import { cachedProtocol } from "./protocol";
+import { cachedProtocol, protocolFromPort } from "./protocol";
 import { collectSsh } from "./ssh";
 import { collectTailscale, collectTunnels } from "./tunnels";
 import type { Container, LocalProcess, PortRow, Snapshot, SshConnection } from "./types";
@@ -26,7 +26,7 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
           rows.push({
             ...base, ownerKind: "docker", owner: `${c.name} (:${cp.containerPort})`, containerId: c.id,
             folder: c.workdir, project: c.project, tech: containerTech(c), system: false,
-            protocol: cachedProtocol(p.pid, l.port, l.address, `${c.image} ${c.name}`),
+            protocol: cachedProtocol(c.id, l.port, l.address, `${c.image} ${c.name}`),
           });
           continue;
         }
@@ -42,7 +42,7 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
           ...base, ownerKind: "ssh", owner: `${conn.target} → ${dest ?? "?"}`, sshTarget: conn.target, tech: "SSH tunnel", system: false,
           sshHost: conn.hostname ?? conn.target, remotePort: onHost ? fwd.destPort : undefined, stopPid: conn.stopPid,
           // a -D forward is a SOCKS proxy; a -L forward speaks whatever the service behind it does
-          protocol: fwd?.kind === "D" ? "socks" : cachedProtocol(p.pid, l.port, l.address, dest ?? ""),
+          protocol: fwd?.kind === "D" ? "socks" : (protocolFromPort(fwd?.destPort) ?? cachedProtocol(p.pid, l.port, l.address, dest ?? "")),
         });
         continue;
       }
@@ -81,6 +81,8 @@ export async function collectSnapshot(): Promise<Snapshot> {
   if (docker.error) errors.push(docker.error);
 
   const ports = buildPorts(listening.procs, docker.containers, ssh);
+  // with the proxy up but docker unanswered, container ports show as the proxy's own: not a real change
+  const partial = !!listening.error || (!!docker.error && listening.procs.some((p) => DOCKER_BACKEND.test(p.name) && p.listens.length > 0));
   for (const c of docker.containers) {
     for (const cp of c.ports) cp.protocol = ports.find((r) => r.containerId === c.id && r.port === cp.hostPort)?.protocol;
   }
@@ -97,5 +99,6 @@ export async function collectSnapshot(): Promise<Snapshot> {
     dockerDisk: cachedDockerDisk(),
     portPrefs,
     errors,
+    ...(partial && { partial }),
   };
 }

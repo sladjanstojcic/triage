@@ -46,6 +46,8 @@ async function read() {
 
 /** Compare a fresh scan with the last one and keep what changed. Never throws: history is best effort. */
 export async function record(snap: Snapshot) {
+  // a scan that missed ports would log them as stopped and started again
+  if (snap.partial) return;
   try {
     await load();
     const now = listeners(snap);
