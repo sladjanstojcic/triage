@@ -55,13 +55,13 @@ Every port, on every tab, shows the protocol it speaks: `http`, `https`, `postgr
 
 ### Docker
 
-Containers grouped by compose or Supabase CLI project, linked to the project folder. Running containers can be paused, restarted or stopped, one at a time or a whole stack at once, and each one's recent log opens in a side drawer that follows new lines. Stopped containers stay listed with a start button when their stack is still running or they stopped in the last 24 hours.
+Containers grouped by compose or Supabase CLI project, linked to the project folder. Running containers can be paused, restarted or stopped, one at a time or a whole stack at once, and each one's recent log opens in a side drawer that follows new lines. Each shows its CPU and memory now, with a line of the last half hour. With OrbStack, each running container links to its `name.orb.local` address (and any `dev.orbstack.domains`), which OrbStack serves over HTTPS. Stopped containers stay listed with a start button when their stack is still running or they stopped in the last 24 hours.
 
 ![Docker tab: a Supabase stack's containers with image, health and port mappings](docs/screenshots/docker.png)
 
 ### SSH & Tunnels
 
-Outgoing `ssh`/`autossh` connections with their forwards (including ones from `~/.ssh/config`) and what each forward reaches on the other side. Also detects cloudflared, ngrok, localtunnel, bore, zrok, frp, Tailscale serve/funnel, and lists your Tailscale peers.
+Outgoing `ssh`/`autossh` connections with their forwards (including ones from `~/.ssh/config`) and what each forward reaches on the other side. Also detects cloudflared, ngrok, localtunnel, bore, zrok, frp, Tailscale serve/funnel and `kubectl port-forward` (with the service, namespace and context it reaches), and lists your Tailscale peers.
 
 ![SSH & Tunnels tab: SSH connections with their forwarded ports and the remote services they reach, plus Tailscale peers](docs/screenshots/ssh.png)
 
