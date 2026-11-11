@@ -137,14 +137,14 @@ export function NetworkView({ snap, remote }: { snap: Snapshot; remote?: RemoteS
 
       {snap.tunnels.length === 0 ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground lg:col-span-2">
-          <GlobeIcon className="size-4" /> No public tunnels running (cloudflared, ngrok, localtunnel, bore, zrok, Tailscale
-          serve/funnel).
+          <GlobeIcon className="size-4" /> No tunnels running (cloudflared, ngrok, localtunnel, bore, zrok, Tailscale
+          serve/funnel, kubectl port-forward).
         </p>
       ) : (
         <Card size="sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <GlobeIcon className="size-4 text-muted-foreground" /> Public tunnels
+              <GlobeIcon className="size-4 text-muted-foreground" /> Tunnels
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -168,7 +168,11 @@ export function NetworkView({ snap, remote }: { snap: Snapshot; remote?: RemoteS
                         <KillButton
                           pid={t.pid}
                           title={`Kill ${t.kind}`}
-                          description={<>Sends SIGTERM to {t.kind} (pid {t.pid}). The public URL stops working.</>}
+                          description={
+                            <>
+                              Sends SIGTERM to {t.kind} (pid {t.pid}). {t.publicUrl ? "The public URL stops working." : "What it forwards stops answering."}
+                            </>
+                          }
                         />
                       </span>
                     )}

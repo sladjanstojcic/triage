@@ -8,11 +8,17 @@ import { readPortPrefs } from "@/lib/port-prefs";
 import { dropExpired } from "@/lib/reserve";
 import { cachedProtocol, protocolFromPort } from "./protocol";
 import { collectSsh } from "./ssh";
-import { collectTailscale, collectTunnels } from "./tunnels";
+import { collectTailscale, collectTunnels, parsePortForward } from "./tunnels";
 import type { Container, LocalProcess, PortRow, Snapshot, SshConnection } from "./types";
 
 // Processes that publish container ports on the host (Docker Desktop, OrbStack, Colima/Lima, Podman).
 const DOCKER_BACKEND = /^(OrbStack|com\.docker|vpnkit|docker-proxy|Docker|limactl|ssh-agent-lima|gvproxy|podman)/i;
+
+/** The protocol of a kubectl port-forward's remote port, when it is a database's usual one. */
+function kubeProtocol(p: LocalProcess, port: number) {
+  const pf = parsePortForward(p.command);
+  return pf && protocolFromPort(pf.forwards.find((f) => f.local === port)?.remote);
+}
 
 function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConnection[]): PortRow[] {
   const rows: PortRow[] = [];
@@ -55,8 +61,9 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
         ...base, ownerKind: "process", owner: p.command, folder: p.cwd, project: p.project, tech: p.tech,
         system, stopPid: system || self ? undefined : p.stopPid,
         ...(!system && p.origin?.brewService && { brewService: p.origin.brewService }),
-        // macOS services and apps aren't probed: their ports are hidden by default and none is a dev server
-        protocol: system ? undefined : cachedProtocol(p.pid, l.port, l.address, `${p.tech ?? ""} ${p.command}`),
+        // macOS services and apps aren't probed: their ports are hidden by default and none is a dev server;
+        // a kubectl port-forward to a database's usual port is named from it, so the probe never reaches the cluster
+        protocol: system ? undefined : (kubeProtocol(p, l.port) ?? cachedProtocol(p.pid, l.port, l.address, `${p.tech ?? ""} ${p.command}`)),
       });
     }
   }

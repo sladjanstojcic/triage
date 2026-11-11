@@ -2,7 +2,7 @@ import { run } from "@/lib/exec";
 import { visibleContainers } from "@/lib/grouping";
 import { projectFor } from "./local";
 import { parseSize } from "./machine";
-import type { Container, ContainerPort, LogLine } from "./types";
+import type { Container, ContainerPort, LogLine, UsageSample } from "./types";
 
 type Inspect = {
   Id: string;
@@ -93,14 +93,59 @@ export function parseDockerStats(out: string): Map<string, { cpu: number; memMB:
 // use the last sample.
 export const DOCKER_STATS_MS = 30_000;
 let dockerStats: { at: number; byId: Map<string, { cpu: number; memMB: number }>; pending?: Promise<void> } = { at: 0, byId: new Map() };
+// the last half hour of samples per container, for the Docker tab's usage lines
+export const USAGE_SAMPLES = 60;
+let usageHistory = new Map<string, UsageSample[]>();
+
+/** Add one round of samples; a container missing from it (stopped, removed) loses its history. */
+export function addSamples(
+  history: Map<string, UsageSample[]>,
+  stats: Map<string, { cpu: number; memMB: number }>,
+  at: string,
+  max = USAGE_SAMPLES,
+): Map<string, UsageSample[]> {
+  const next = new Map<string, UsageSample[]>();
+  for (const [id, s] of stats) next.set(id, [...(history.get(id) ?? []), { at, ...s }].slice(-max));
+  return next;
+}
 
 function cachedDockerStats() {
   if (Date.now() - dockerStats.at > DOCKER_STATS_MS && !dockerStats.pending) {
     dockerStats.pending = run("docker", ["stats", "--no-stream", "--format", "{{json .}}"], 15_000).then((res) => {
       dockerStats = { at: Date.now(), byId: res.ok ? parseDockerStats(res.stdout) : new Map() };
+      // a failed sample is a gap, not a reason to forget what was seen
+      if (res.ok) usageHistory = addSamples(usageHistory, dockerStats.byId, new Date().toISOString());
     });
   }
   return dockerStats.byId;
+}
+
+/**
+ * The names OrbStack gives a container: its `dev.orbstack.domains` label (without `@port`, wildcards left
+ * out since they aren't a page to open), then `service.project.orb.local` for a compose service, or
+ * `name.orb.local`.
+ */
+export function orbDomains(name: string, labels: Record<string, string>): string[] {
+  const custom = (labels["dev.orbstack.domains"] ?? "")
+    .split(",")
+    .map((d) => d.trim().replace(/@\d+$/, ""))
+    .filter((d) => d && !d.includes("*"));
+  const service = labels["com.docker.compose.service"];
+  const project = labels["com.docker.compose.project"];
+  return [...custom, service && project ? `${service}.${project}.orb.local` : `${name}.orb.local`];
+}
+
+// Whether the runtime is OrbStack, rechecked now and then since the docker context can be switched.
+const RUNTIME_MS = 60_000;
+let runtime: { at: number; orb: boolean; pending?: Promise<void> } = { at: 0, orb: false };
+
+function cachedIsOrbStack(): boolean {
+  if (Date.now() - runtime.at > RUNTIME_MS && !runtime.pending) {
+    runtime.pending = run("docker", ["info", "--format", "{{.OperatingSystem}}"], 5000).then((res) => {
+      runtime = { at: Date.now(), orb: res.ok && res.stdout.trim() === "OrbStack" };
+    });
+  }
+  return runtime.orb;
 }
 
 export async function collectContainers(): Promise<{ containers: Container[]; error?: string }> {
@@ -117,6 +162,7 @@ export async function collectContainers(): Promise<{ containers: Container[]; er
   if (!res.ok) return { containers: [], error: `docker inspect failed: ${res.stderr.trim().slice(0, 200)}` };
   const data = JSON.parse(res.stdout) as Inspect[];
   const stats = cachedDockerStats();
+  const orb = cachedIsOrbStack();
 
   const containers = await Promise.all(
     data.map(async (c): Promise<Container> => {
@@ -148,6 +194,8 @@ export async function collectContainers(): Promise<{ containers: Container[]; er
         workdir,
         project: await projectFor(workdir),
         ...(c.State.Status === "running" ? stats.get(c.Id.slice(0, 12)) : undefined),
+        ...(c.State.Status === "running" && usageHistory.has(c.Id.slice(0, 12)) && { usage: usageHistory.get(c.Id.slice(0, 12)) }),
+        ...(orb && c.State.Status === "running" && { domains: orbDomains(c.Name.replace(/^\//, ""), labels) }),
       };
     }),
   );
