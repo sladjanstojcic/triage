@@ -77,6 +77,7 @@ function dedupeListens(addrs: ListenAddr[]): ListenAddr[] {
 }
 
 const TECH: [RegExp, string][] = [
+  [/(^|\/)kubectl\b.*\bport-forward\b/, "kubectl port-forward"],
   [/next-server|\bnext\b (dev|start)|\/next\/dist|\.bin\/next/, "Next.js"],
   [/\bvite\b(?!\.config)/, "Vite"],
   [/\bastro\b/, "Astro"],

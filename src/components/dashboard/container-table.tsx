@@ -3,6 +3,7 @@ import type { ContainerPort, ContainerSummary, PortRow } from "@/lib/collect/typ
 import { count } from "@/lib/format";
 import { containerGroups, containerTech, isUnhealthy, shortContainerName } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
+import { ContainerUsage } from "./sparkline";
 import { CopyPath, CopyUrl, PortLink, ProtocolTag, ProjectBadges, TechBadge, TunnelLinks } from "./cells";
 import { type Column, GroupedTable } from "./grouped-table";
 import { LogsButton } from "./logs";
@@ -39,6 +40,8 @@ const columns = (remote: boolean): Column[] => [
   { header: "Container", width: "w-48" },
   { header: "Image", width: remote ? "w-60" : "w-72" },
   { header: "Status", width: "w-32" },
+  // docker stats are sampled on this Mac only
+  ...(remote ? [] : [{ header: "Usage", width: "w-40", align: "right" as const }]),
   { header: "Ports (host → container)" },
   ...(remote ? [{ header: "SSH tunnel (this Mac → host)", width: "w-72" }] : []),
   { header: "", width: "w-32" },
@@ -48,6 +51,9 @@ const columns = (remote: boolean): Column[] => [
  * Containers grouped by compose / Supabase stack, with stop controls: the Docker tab, and every remote
  * host when `host` is given (stopped over ssh; an extra column shows the local ssh tunnels to its ports).
  */
+/** A container worth opening in a browser: a published port that speaks HTTP, or none published to tell. */
+const servesWeb = (c: ContainerSummary) => c.ports.length === 0 || c.ports.some((p) => p.protocol === "http" || p.protocol === "https");
+
 export function ContainerTable({
   scope,
   containers,
@@ -84,6 +90,18 @@ export function ContainerTable({
         // the group header already names the stack, so drop it from each container name
         <span key="name" title={c.name} className="block font-mono text-xs break-all">
           {shortContainerName(c)}
+          {c.domains?.map((d) =>
+            // OrbStack finds the web port and serves it over HTTPS with its own local CA; a database gets the name only
+            servesWeb(c) ? (
+              <a key={d} href={`https://${d}`} target="_blank" rel="noreferrer" className="block text-[11px] text-sky-600 hover:underline dark:text-sky-400">
+                {d}
+              </a>
+            ) : (
+              <span key={d} className="block text-[11px] text-muted-foreground">
+                {d}
+              </span>
+            ),
+          )}
         </span>,
         <span key="image" className="block font-mono text-xs break-all text-muted-foreground">
           {c.image}
@@ -96,6 +114,7 @@ export function ContainerTable({
             </span>
           )}
         </span>,
+        ...(host ? [] : [<ContainerUsage key="usage" cpu={c.cpu} memMB={c.memMB} usage={c.usage} />]),
         <PublishedPorts key="ports" ports={c.ports} remote={!!host} image={c.image} />,
         ...(host
           ? [

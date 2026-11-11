@@ -13,6 +13,42 @@ const TUNNEL_BINARIES: [RegExp, string][] = [
   [/(^|\/)expose$/, "expose"],
 ];
 
+/** What `kubectl port-forward` reaches: the resource, its namespace and context, and local → remote ports. */
+export type PortForward = { resource: string; namespace?: string; context?: string; forwards: { local?: number; remote: number }[] };
+
+// flags of kubectl port-forward (and kubectl's global ones) that take a value
+const KUBECTL_VALUE_FLAGS = new Set(["-n", "--namespace", "--context", "--address", "--pod-running-timeout", "--kubeconfig", "--cluster", "--user", "-s", "--server"]);
+
+/** `kubectl [-n ns] port-forward svc/web 8080:80 :9090` → svc/web, ns, [8080→80, ?→9090]; undefined if it isn't one. */
+export function parsePortForward(command: string): PortForward | undefined {
+  const tokens = command.split(/\s+/);
+  if (!/(^|\/)kubectl$/.test(tokens[0] ?? "") || !tokens.includes("port-forward")) return undefined;
+  const out: PortForward = { resource: "", forwards: [] };
+  let after = false;
+  for (let i = 1; i < tokens.length; i++) {
+    const t = tokens[i];
+    const [flag, inline] = t.startsWith("-") ? t.split(/=(.*)/s) : [t];
+    if (t.startsWith("-")) {
+      const value = inline ?? (KUBECTL_VALUE_FLAGS.has(flag) ? tokens[++i] : undefined);
+      if (flag === "-n" || flag === "--namespace") out.namespace = value;
+      if (flag === "--context") out.context = value;
+      continue;
+    }
+    // the resource and ports come after the subcommand; before it there are only kubectl's own flags
+    if (t === "port-forward") after = true;
+    if (!after || t === "port-forward") continue;
+    const ports = t.match(/^(\d*):(\d+)$/) ?? t.match(/^()(\d+)$/);
+    if (out.resource && ports) {
+      const remote = Number(ports[2]);
+      // "8080" forwards 8080 to 8080; ":80" lets kubectl pick the local port
+      out.forwards.push({ local: ports[1] === "" ? (t.includes(":") ? undefined : remote) : Number(ports[1]), remote });
+    } else if (!out.resource) {
+      out.resource = t.includes("/") ? t : `pod/${t}`;
+    }
+  }
+  return out.resource ? out : undefined;
+}
+
 async function getJson<T>(url: string): Promise<T | undefined> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
@@ -32,6 +68,20 @@ export async function collectTunnels(ps: Map<number, PsRow>, listening: LocalPro
 
   for (const r of ps.values()) {
     const exe = r.command.split(" ")[0];
+    const pf = parsePortForward(r.command);
+    if (pf) {
+      const local = listening.find((p) => p.pid === r.pid)?.listens.map((l) => l.port) ?? [];
+      const where = [pf.namespace && `namespace ${pf.namespace}`, pf.context && `context ${pf.context}`].filter(Boolean).join(", ");
+      tunnels.push({
+        kind: "kubectl",
+        pid: r.pid,
+        command: r.command,
+        target: `${pf.resource}${where ? ` (${where})` : ""}`,
+        // a random local port (":80") shows up only once kubectl listens
+        detail: pf.forwards.map((f, i) => `:${f.local ?? local[i] ?? "?"} → ${pf.resource}:${f.remote}`).join(", "),
+      });
+      continue;
+    }
     const hit = TUNNEL_BINARIES.find(([re]) => re.test(exe));
     if (!hit) continue;
     const kind = hit[1];

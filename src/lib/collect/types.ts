@@ -85,7 +85,14 @@ export type Container = {
   /** from `docker stats`, refreshed in the background; undefined until the first sample or when stopped */
   cpu?: number;
   memMB?: number;
+  /** OrbStack only, while it runs: the names it answers on (`web.shop.orb.local`), served over HTTPS */
+  domains?: string[];
+  /** recent `docker stats` samples, oldest first (about the last half hour), while it runs */
+  usage?: UsageSample[];
 };
+
+/** One `docker stats` sample of a container. */
+export type UsageSample = { at: string; cpu: number; memMB: number };
 
 /** One line of `docker logs --timestamps`: when it was written, when docker says so, and the text. */
 export type LogLine = { at?: string; text: string };
@@ -93,7 +100,7 @@ export type LogLine = { at?: string; text: string };
 /** What the local Docker tab and a remote host both show (and stop) for a container. */
 export type ContainerSummary = Pick<
   Container,
-  "id" | "name" | "image" | "state" | "status" | "health" | "ports" | "group" | "kind" | "workdir" | "project" | "stoppedAt"
+  "id" | "name" | "image" | "state" | "status" | "health" | "ports" | "group" | "kind" | "workdir" | "project" | "stoppedAt" | "domains" | "cpu" | "memMB" | "usage"
 >;
 
 /** An ssh port forward, as written (`spec`) and taken apart (see parseForward in collect/ssh.ts). */

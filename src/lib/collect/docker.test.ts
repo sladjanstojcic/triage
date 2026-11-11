@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeLogs, parseDockerStats, parseLogs, parseReclaimed } from "./docker";
+import { addSamples, mergeLogs, orbDomains, parseDockerStats, parseLogs, parseReclaimed } from "./docker";
 
 test("parseDockerStats: CPU percent and used memory by short id", () => {
   const out = `{"CPUPerc":"0.45%","ID":"1d924cee908c","MemUsage":"200.9MiB / 2.91GiB","Name":"studio"}
@@ -36,4 +36,26 @@ test("mergeLogs: stdout and stderr back in time order", () => {
 test("parseReclaimed: image and build cache totals, nothing-freed parts left out", () => {
   assert.equal(parseReclaimed("Deleted Images:\nuntagged: x\n\nTotal reclaimed space: 1.234GB\nID\tRECLAIMABLE\nabc\ttrue\nTotal:\t300MB\n"), "1.234GB + 300MB");
   assert.equal(parseReclaimed("Total reclaimed space: 0B\nTotal:\t0B\n"), "0B");
+});
+
+test("orbDomains: custom domains first, then the compose or container name", () => {
+  assert.deepEqual(orbDomains("pg", {}), ["pg.orb.local"]);
+  assert.deepEqual(
+    orbDomains("shop-api-1", { "com.docker.compose.service": "api", "com.docker.compose.project": "shop" }),
+    ["api.shop.orb.local"],
+  );
+  assert.deepEqual(orbDomains("web", { "dev.orbstack.domains": "app.local@80, admin.local@8080,*.wild.local" }), [
+    "app.local",
+    "admin.local",
+    "web.orb.local",
+  ]);
+});
+
+test("addSamples: one more sample per running container, capped; a missing one loses its history", () => {
+  const stats = (pairs: [string, number][]) => new Map(pairs.map(([id, cpu]) => [id, { cpu, memMB: 10 }]));
+  let h = addSamples(new Map(), stats([["a", 1], ["b", 2]]), "t1", 2);
+  h = addSamples(h, stats([["a", 3], ["b", 4]]), "t2", 2);
+  h = addSamples(h, stats([["a", 5]]), "t3", 2);
+  assert.deepEqual(h.get("a")?.map((s) => [s.at, s.cpu]), [["t2", 3], ["t3", 5]]);
+  assert.equal(h.has("b"), false);
 });
