@@ -3,7 +3,8 @@ import { NOTE_MAX, setPortPref } from "@/lib/port-prefs";
 import { run } from "@/lib/exec";
 import { SSH_TARGET_RE } from "@/lib/ssh-target";
 import { mergeLogs, parseLogs, parseReclaimed } from "@/lib/collect/docker";
-import { probeRemote, sshRun } from "@/lib/collect/remote";
+import { forgetDockerDisk, probeRemote, sshRun } from "@/lib/collect/remote";
+import { refreshDockerDisk } from "@/lib/collect/machine";
 import { collectSnapshot } from "@/lib/collect/snapshot";
 import type { ContainerAction, ContainerSummary, LogLine } from "@/lib/collect/types";
 import { isUp } from "@/lib/grouping";
@@ -143,12 +144,14 @@ export async function dockerPrune(hostId?: number): Promise<{ reclaimed?: string
       if (!res.ok) return { error: res.stderr.trim().slice(0, 300) || `docker ${cmd} failed` };
       out += res.stdout;
     }
+    await refreshDockerDisk();
     return { reclaimed: parseReclaimed(out) };
   }
   const host = (await listHosts()).find((h) => h.id === hostId);
   if (!host) return { error: "That host is no longer in the list" };
   const script = PRUNE.map((cmd) => `docker ${cmd}`).join(" && ");
   const res = await sshRun(host.sshTarget, `if docker ps -q >/dev/null 2>&1; then ${script}; else ${script.replaceAll("docker ", "sudo -n docker ")}; fi`, 10 * 60_000);
+  forgetDockerDisk(host.sshTarget);
   return res.ok ? { reclaimed: parseReclaimed(res.stdout) } : { error: res.stderr.trim().slice(0, 300) || `docker prune failed on ${host.name}` };
 }
 

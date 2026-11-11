@@ -119,3 +119,11 @@ export function cachedDockerDisk(): DockerDiskRow[] | undefined {
   }
   return dockerDisk.rows;
 }
+
+/** Look again now, after something changed what docker can free (a cleanup). */
+export async function refreshDockerDisk() {
+  await dockerDisk.pending;
+  dockerDisk = { at: 0, rows: dockerDisk.rows };
+  cachedDockerDisk();
+  await dockerDisk.pending;
+}
