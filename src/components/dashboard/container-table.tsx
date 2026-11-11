@@ -41,7 +41,7 @@ const columns = (remote: boolean): Column[] => [
   { header: "Status", width: "w-32" },
   { header: "Ports (host → container)" },
   ...(remote ? [{ header: "SSH tunnel (this Mac → host)", width: "w-72" }] : []),
-  { header: "", width: "w-24" },
+  { header: "", width: "w-32" },
 ];
 
 /**

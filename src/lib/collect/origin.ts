@@ -137,15 +137,19 @@ function appFromChain(chain: ProcRow[]): string | undefined {
   }
 }
 
+// `brew services start x` loads the launchd job homebrew.mxcl.x; a formula name is letters, digits and @.+-_
+const BREW_JOB = /^homebrew\.mxcl\.([\w@.+-]+)$/;
+
 export function describeOrigin(chain: ProcRow[], env: Record<string, string>): Origin | undefined {
   if (chain.length === 0) return undefined;
   const root = chain[chain.length - 1];
   const launchdJob = !!env.XPC_SERVICE_NAME && env.XPC_SERVICE_NAME !== "0";
+  const brewService = env.XPC_SERVICE_NAME?.match(BREW_JOB)?.[1];
   const systemdUnit = !!env.INVOCATION_ID;
 
   const app =
     appFromChain(chain) ??
-    (launchdJob ? "launchd" : systemdUnit ? "systemd" : undefined) ??
+    (brewService ? "brew services" : launchdJob ? "launchd" : systemdUnit ? "systemd" : undefined) ??
     BUNDLES[env.__CFBundleIdentifier ?? ""] ??
     (env.TMUX ? "tmux" : undefined);
   const term = TERMINALS[env.TERM_PROGRAM ?? ""];
@@ -164,5 +168,6 @@ export function describeOrigin(chain: ProcRow[], env: Record<string, string>): O
   if (app) origin.app = app;
   if (term && term !== app) origin.terminal = term;
   if (agent) origin.agent = agent;
+  if (brewService) origin.brewService = brewService;
   return origin.app || origin.terminal || origin.agent || detached ? origin : undefined;
 }

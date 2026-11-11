@@ -41,6 +41,7 @@ export function PortsView({
         address={p.address}
         protocol={p.protocol}
         pinned={portPref(snap, p.port).pinned}
+        watched={portPref(snap, p.port).watched}
         hint={`${p.tech ?? ""} ${p.containerId ? (containers.get(p.containerId)?.image ?? "") : p.owner}`}
       />,
       <TechBadge key="type" tech={p.tech ?? p.processName} />,

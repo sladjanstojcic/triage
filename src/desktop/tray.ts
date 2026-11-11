@@ -1,8 +1,9 @@
-// The menu bar icon: what needs attention and each project's servers, with notifications for new problems.
+// The menu bar icon: what needs attention and each project's servers, with notifications for new problems
+// and for watched ports that start or stop.
 // It reads the same HTTP API as the window, so every stop goes through the server's fresh-scan check.
 import path from "node:path";
 import { app, dialog, Menu, type MenuItemConstructorOptions, nativeImage, Notification, shell, Tray } from "electron";
-import { type AttentionItem, attentionItems, isForgotten, newAlerts } from "@/lib/attention";
+import { type AttentionItem, attentionItems, isForgotten, newAlerts, watchChanges, watchedPorts } from "@/lib/attention";
 import type { Protocol, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
 import { isWeb, localUrl, tildify } from "@/lib/format";
 import { findConflicts, groupByProject, type ProjectGroup } from "@/lib/grouping";
@@ -42,27 +43,41 @@ export function startTray(d: TrayDeps) {
   const announced = new Map<string, number>();
   // servers already stopped for being idle, so a slow exit isn't signalled twice
   const autoStopped = new Set<number>();
+  // what listens on each watched port, as of the last full scan; undefined until the first one
+  let watched: Map<number, string> | undefined;
   // a notification that is garbage-collected loses its click handler
   const shown = new Set<Notification>();
 
   const api = triageClient(d.appUrl);
 
-  function notify(item: AttentionItem, title?: string) {
+  function show(title: string, body: string, tab: Tab | undefined, silent: boolean) {
     if (!Notification.isSupported()) return;
-    const remoteHost = item.machine !== snap?.machine.hostname;
-    const n = new Notification({
-      title: title ?? (remoteHost ? `${item.machine}: ${item.text}` : item.text),
-      body: item.detail ?? "",
-      silent: item.level === "info",
-    });
-    n.on("click", () => d.show(item.tab));
+    const n = new Notification({ title, body, silent });
+    n.on("click", () => d.show(tab));
     n.on("close", () => shown.delete(n));
     shown.add(n);
     n.show();
   }
 
+  function notify(item: AttentionItem, title?: string) {
+    const remoteHost = item.machine !== snap?.machine.hostname;
+    show(title ?? (remoteHost ? `${item.machine}: ${item.text}` : item.text), item.detail ?? "", item.tab, item.level === "info");
+  }
+
+  /** Watched ports: notify about each one that started or stopped. A scan that missed ports doesn't count. */
+  function checkWatched() {
+    if (!snap || snap.partial) return;
+    const now = watchedPorts(snap);
+    // a port watched from the window, or watched before the app started, is taken as it is now
+    for (const c of watched ? watchChanges(watched, now) : []) {
+      show(c.up ? `:${c.port} is up` : `:${c.port} stopped`, c.up ? c.what : `was ${c.what}`, "ports", false);
+    }
+    watched = now;
+  }
+
   function update() {
     if (!snap) return;
+    checkWatched();
     const mac = snap.machine.hostname;
     items = attentionItems(snap, remote, findConflicts(snap.ports));
     const keys = new Set(items.map((i) => i.key));
@@ -137,11 +152,12 @@ export function startTray(d: TrayDeps) {
       ]
         .filter(Boolean)
         .join("\n\n"),
-      buttons: ["Kill", "Force kill", "Cancel"],
+      // a brew service is stopped by brew, so there is nothing to force
+      buttons: row.brewService ? ["Stop", "Cancel"] : ["Kill", "Force kill", "Cancel"],
       defaultId: 0,
-      cancelId: 2,
+      cancelId: row.brewService ? 1 : 2,
     });
-    if (response === 2) return;
+    if (response === (row.brewService ? 1 : 2)) return;
     try {
       await api.stopProcess(stopPid, response === 1);
       setTimeout(loadSnapshot, 600);
@@ -174,12 +190,32 @@ export function startTray(d: TrayDeps) {
           const ports = (list: number[]) => [...new Set(list)].map((p) => `:${p}`).join(" ");
           // two servers on the same port (a conflict) are told apart by pid
           const twin = all.some(([other, ps2]) => other !== pid && ports(ps2) === ports(ps));
-          return { label: `Kill ${ports(ps)}${twin ? ` (pid ${pid})` : ""}…`, click: () => void confirmStop(g, pid) };
+          const verb = g.ports.some((p) => p.stopPid === pid && p.brewService) ? "Stop" : "Kill";
+          return { label: `${verb} ${ports(ps)}${twin ? ` (pid ${pid})` : ""}…`, click: () => void confirmStop(g, pid) };
         }),
         { type: "separator" },
         { label: "Show in Triage", click: () => d.show("projects") },
       ],
     };
+  }
+
+  /** Watched ports, up or not, each with a way to stop watching it (a stopped port is in no other list). */
+  function watchedMenu(): MenuItemConstructorOptions[] {
+    if (!watched?.size) return [];
+    return [
+      {
+        label: "Watched Ports",
+        submenu: [...watched].sort(([a], [b]) => a - b).map(([port, what]) => ({
+          label: short(`:${port}  ${what ? `up · ${what}` : "not listening"}`),
+          submenu: [
+            {
+              label: `Stop Watching :${port}`,
+              click: () => void api.setPortPref(port, { watched: false }).then(loadSnapshot, () => {}),
+            },
+          ],
+        })),
+      },
+    ];
   }
 
   function menu(): MenuItemConstructorOptions[] {
@@ -197,6 +233,7 @@ export function startTray(d: TrayDeps) {
       { type: "separator" },
       { label: groups.length ? "Projects" : "No dev servers running", enabled: false },
       ...groups.map(projectItem),
+      ...watchedMenu(),
       { type: "separator" },
       {
         label: "Open Triage",

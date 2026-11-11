@@ -128,6 +128,14 @@ export function stopPlan(snap: Snapshot, port: number, only?: PortRow): StopPlan
       alsoGoesDown: [],
     };
   }
+  if (row.brewService) {
+    return {
+      target: { pid: row.stopPid },
+      title: `Stop brew service ${row.brewService}`,
+      action: `Runs brew services stop ${row.brewService}: launchd would restart a killed process. It won't start at login either, until brew services start ${row.brewService}.`,
+      alsoGoesDown: impactLines(processImpact(snap, row.stopPid), port),
+    };
+  }
   const viaCli = row.stopPid !== row.pid;
   return {
     target: { pid: row.stopPid },

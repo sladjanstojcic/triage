@@ -49,13 +49,13 @@ Every listening port grouped by project folder, with git branch, worktree badge 
 
 A flat table of every listening TCP port and what owns it: a process, a Docker or Supabase container (mapped through Docker Desktop, OrbStack, Colima or Podman), or an SSH `-L` forward. System services stay hidden until you click **Show hidden**.
 
-Every port, on every tab, shows the protocol it speaks: `http`, `https`, `postgres`, `redis`, `mysql`, `ssh`, `smtp` and so on. Databases are known by what runs them, and an SSH forward to a database's usual port (5432, 3306, 6379, 27017) by that port, so a remote database never sees a probe. Anything else gets one short look (a TLS handshake, then an HTTP request any server turns down before its app sees it). Only web ports are links, and the copy button next to a port copies a URL for its protocol: `https://localhost:8443`, or `postgresql://postgres:postgres@localhost:54322/postgres` for a Supabase database. Each port's **⋯** menu pins it to the top, hides it, or adds a note; these are kept by port number in `~/.config/triage/ports.json`.
+Every port, on every tab, shows the protocol it speaks: `http`, `https`, `postgres`, `redis`, `mysql`, `ssh`, `smtp` and so on. Databases are known by what runs them, and an SSH forward to a database's usual port (5432, 3306, 6379, 27017) by that port, so a remote database never sees a probe. Anything else gets one short look (a TLS handshake, then an HTTP request any server turns down before its app sees it). Only web ports are links, and the copy button next to a port copies a URL for its protocol: `https://localhost:8443`, or `postgresql://postgres:postgres@localhost:54322/postgres` for a Supabase database. Each port's **⋯** menu pins it to the top, hides it, watches it (the desktop app then notifies when it stops or starts), or adds a note; these are kept by port number in `~/.config/triage/ports.json`.
 
 ![Ports tab: every listening port with its type, command line and project folder](docs/screenshots/ports.png)
 
 ### Docker
 
-Containers grouped by compose or Supabase CLI project, linked to the project folder. Running containers can be restarted or stopped, one at a time or a whole stack at once, and each one's recent log opens in a side drawer that follows new lines. Stopped containers stay listed with a start button when their stack is still running or they stopped in the last 24 hours.
+Containers grouped by compose or Supabase CLI project, linked to the project folder. Running containers can be paused, restarted or stopped, one at a time or a whole stack at once, and each one's recent log opens in a side drawer that follows new lines. Stopped containers stay listed with a start button when their stack is still running or they stopped in the last 24 hours.
 
 ![Docker tab: a Supabase stack's containers with image, health and port mappings](docs/screenshots/docker.png)
 
@@ -80,6 +80,7 @@ VPS hosts you add by SSH alias, probed every 30 seconds over SSH (`ss`, `/proc`,
 Every action asks for confirmation first:
 
 - **✕ kill** a dev server (SIGTERM, or SIGKILL with *Force kill*): the `next dev`/`vite` CLI, not just its worker; also tunnel clients such as `cloudflared` or `ngrok`
+- **■ stop** a Homebrew service with `brew services stop`, since launchd would restart a killed one
 - **disconnect** an SSH tunnel: the `autossh` supervisor too, so it doesn't reconnect
 - **■ stop**, **▶ start** or **↺ restart** a container, or stop and start a whole compose/Supabase stack
 
@@ -137,6 +138,7 @@ The app starts its own server on port 4777, so stop `pnpm dev` or the LaunchAgen
 It also lives in the menu bar. Its menu lists what needs attention along with each project's ports, which you can open or kill (after the same confirmation as the window). From the same menu you can:
 
 - turn on a **global shortcut** (⌃⌥T, ⌃⌥Space or ⌃⌥⌘T) that shows or hides Triage from any app; it is off until you pick one
+- see your **watched ports**, up or not, and stop watching one; a watched port that starts or stops always notifies
 - turn **notifications** about new problems on or off: a port bound twice, a server whose launcher closed, a server left idle for a day, an unhealthy container, an unreachable host, a full disk
 - let it **stop servers left idle for a day** on its own, with a notification for each; off until you turn it on
 
@@ -154,10 +156,12 @@ triage                 # what needs attention, and each project's ports
 triage ports           # every listening port, who started it (--all adds system services and hidden ports)
 triage who 3000        # what is on :3000 and what stopping it takes down
 triage stop 3000       # asks first; --yes for scripts, --force for SIGKILL
+triage reserve "shop"  # a free port held for an hour, printed alone: PORT=$(triage reserve "shop") pnpm dev
+triage release 3001    # give a reserved port back
 triage --json ...      # the same as JSON
 ```
 
-`triage mcp` is an MCP server, the protocol coding agents use for tools. It gives an agent `list_ports`, `who_is_on_port`, `needs_attention` and `stop_port`. `stop_port` first returns what would stop and what else goes down, and stops only when called again with `confirm: true`. To add it to Claude Code:
+`triage mcp` is an MCP server, the protocol coding agents use for tools. It gives an agent `list_ports`, `who_is_on_port`, `needs_attention`, `stop_port`, `reserve_port` and `release_port`. `stop_port` first returns what would stop and what else goes down, and stops only when called again with `confirm: true`. `reserve_port` hands out a port nothing listens on, on any address, and holds it so two agents never start on the same one; the window shows who reserved it. To add it to Claude Code:
 
 ```bash
 claude mcp add triage -- triage mcp
@@ -169,7 +173,7 @@ claude mcp add triage -- triage mcp
 | --- | --- | --- |
 | `PORT` | `4777` | Port the server listens on |
 | `TRIAGE_HOSTS_FILE` | `~/.config/triage/hosts.json` | Where remote hosts are stored |
-| `TRIAGE_PORTS_FILE` | `~/.config/triage/ports.json` | Pinned and hidden ports, and notes |
+| `TRIAGE_PORTS_FILE` | `~/.config/triage/ports.json` | Pinned, hidden and watched ports, notes and reservations |
 | `TRIAGE_HISTORY_FILE` | `~/.config/triage/history.jsonl` | When ports started and stopped, last 7 days |
 | `TRIAGE_URL` | `http://127.0.0.1:4777` | Where the `triage` CLI finds the server |
 
@@ -181,7 +185,7 @@ Triage shows process command lines and can stop processes, and it has no authent
 
 - binds to `127.0.0.1` only
 - rejects requests whose `Host` header isn't `127.0.0.1`/`localhost` on its port (DNS rebinding protection)
-- accepts state-changing requests (stop, Docker cleanup, add/remove host, pins and notes) and container logs only as JSON with its own `Origin`
+- accepts state-changing requests (stop, Docker cleanup, add/remove host, port settings and reservations) and container logs only as JSON with its own `Origin`
 
 Any program running as you on this Mac can call it, the `triage` CLI included, just as it could run `kill` itself. Don't expose it through a tunnel or reverse proxy.
 

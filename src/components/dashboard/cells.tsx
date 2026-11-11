@@ -1,5 +1,5 @@
 /** Table cell building blocks shared by every view. */
-import { ArrowRightIcon, CheckIcon, CopyIcon, ExternalLinkIcon, PinIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowRightIcon, BellIcon, CheckIcon, CopyIcon, ExternalLinkIcon, PinIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -142,17 +142,20 @@ export function PortCell({
   hint,
   protocol,
   pinned,
+  watched,
 }: {
   port: number;
   address: string;
   hint?: string;
   protocol?: Protocol;
   pinned?: boolean;
+  watched?: boolean;
 }) {
   return (
     <>
       <span className="inline-flex items-center gap-1">
         {pinned && <PinIcon aria-label="Pinned" className="size-3 text-muted-foreground" />}
+        {watched && <BellIcon aria-label="Watched" className="size-3 text-muted-foreground" />}
         <PortLink port={port} address={address} protocol={protocol} />
         <CopyUrl port={port} address={address} hint={hint} protocol={protocol} />
       </span>

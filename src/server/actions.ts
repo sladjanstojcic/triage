@@ -1,5 +1,8 @@
+import { existsSync } from "node:fs";
+import net from "node:net";
 import { addHost, listHosts, removeHost } from "@/lib/hosts";
-import { NOTE_MAX, setPortPref } from "@/lib/port-prefs";
+import { NOTE_MAX, readPortPrefs, reservePort, setPortPref } from "@/lib/port-prefs";
+import { RESERVE_FOR_MAX, RESERVE_MAX_MINUTES, RESERVE_MINUTES } from "@/lib/reserve";
 import { run } from "@/lib/exec";
 import { SSH_TARGET_RE } from "@/lib/ssh-target";
 import { mergeLogs, parseLogs, parseReclaimed } from "@/lib/collect/docker";
@@ -38,6 +41,9 @@ export async function stopProcess(pid: number, force = false): Promise<{ error?:
     ...snap.tunnels.flatMap((t) => (t.pid ? [t.pid] : [])),
   ]);
   if (!allowed.has(pid)) return { error: `pid ${pid} is no longer running or isn't stoppable from here` };
+  // launchd restarts a killed Homebrew service at once; brew stops it and keeps it from starting at login
+  const brew = snap.ports.find((p) => p.stopPid === pid && p.brewService)?.brewService;
+  if (brew) return stopBrewService(brew);
   try {
     process.kill(pid, force ? "SIGKILL" : "SIGTERM");
     return {};
@@ -47,21 +53,43 @@ export async function stopProcess(pid: number, force = false): Promise<{ error?:
   }
 }
 
+const BREW = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"];
+const FORMULA_RE = /^[\w@.+-]+$/;
+
+/** `brew services stop <formula>`; the formula comes from a fresh scan and is checked again here. */
+async function stopBrewService(formula: string): Promise<{ error?: string }> {
+  const brew = BREW.find((p) => existsSync(p));
+  if (!brew || !FORMULA_RE.test(formula)) return { error: `Can't run brew services stop ${formula}` };
+  const res = await run(brew, ["services", "stop", formula], 60_000);
+  return res.ok ? {} : { error: res.stderr.trim().slice(0, 300) || `brew services stop ${formula} failed` };
+}
+
 const CONTAINER_ID_RE = /^[0-9a-f]{12,64}$/;
 
-/** Which containers an action applies to: stop and restart need it up, start needs it stopped. */
+// the state each action needs: start a stopped one, pause a running one, unpause a paused one
+const NEEDS: Record<ContainerAction, (c: ContainerSummary) => boolean> = {
+  start: (c) => !isUp(c),
+  stop: isUp,
+  restart: (c) => c.state === "running" || c.state === "restarting",
+  pause: (c) => c.state === "running",
+  unpause: (c) => c.state === "paused",
+};
+
+/** Which containers an action applies to, by the state a fresh scan shows. */
 function actionable(action: ContainerAction, containers: ContainerSummary[], ids: string[]) {
-  const ok = new Set(containers.filter((c) => (action === "start" ? !isUp(c) : isUp(c))).map((c) => c.id));
+  const ok = new Set(containers.filter(NEEDS[action]).map((c) => c.id));
   return ids.filter((id) => CONTAINER_ID_RE.test(id) && ok.has(id));
 }
 
 const NOT_ACTIONABLE: Record<ContainerAction, string> = {
   start: "Those containers are already running or gone",
   stop: "Those containers are no longer running",
-  restart: "Those containers are no longer running",
+  restart: "Those containers aren't running (a paused one is resumed, not restarted)",
+  pause: "Those containers aren't running",
+  unpause: "Those containers aren't paused",
 };
 
-/** docker start / stop / restart on this Mac, for containers a fresh scan shows in the right state. */
+/** docker start / stop / restart / pause / unpause on this Mac, for containers a fresh scan shows in the right state. */
 export async function containerAction(action: ContainerAction, ids: string[]): Promise<{ error?: string }> {
   const valid = actionable(action, (await collectSnapshot()).containers, ids);
   if (valid.length === 0) return { error: NOT_ACTIONABLE[action] };
@@ -155,18 +183,66 @@ export async function dockerPrune(hostId?: number): Promise<{ reclaimed?: string
   return res.ok ? { reclaimed: parseReclaimed(res.stdout) } : { error: res.stderr.trim().slice(0, 300) || `docker prune failed on ${host.name}` };
 }
 
-/** Pin, hide or annotate a port number. Only booleans and a short note are stored. */
+const bindsOn = (port: number, host: string) =>
+  new Promise<boolean>((resolve) => {
+    const server = net.createServer();
+    // only "in use" means taken: a Mac without IPv6 can't bind :: at all, which says nothing about the port
+    server.once("error", (e: NodeJS.ErrnoException) => resolve(e.code !== "EADDRINUSE"));
+    server.listen({ port, host, exclusive: true }, () => server.close(() => resolve(true)));
+  });
+
+/**
+ * Whether a dev server could listen on `port` right now, whichever address it binds: the check lsof can't
+ * make for another user's sockets. On macOS a bind only collides with the same address, so all four are tried.
+ */
+async function canBind(port: number): Promise<boolean> {
+  for (const host of ["0.0.0.0", "::", "127.0.0.1", "::1"]) if (!(await bindsOn(port, host))) return false;
+  return true;
+}
+
+/**
+ * A free port for a coding agent, held for `minutes` so no other request gets it before its server
+ * listens. Free means: nothing listens on it in a fresh scan, nothing else holds it, and it binds.
+ */
+export async function reserveFreePort(change: Record<string, unknown>): Promise<{ port?: number; until?: string; error?: string }> {
+  const who = typeof change.for === "string" ? change.for.trim() : "";
+  if (!who || who.length > RESERVE_FOR_MAX) return { error: `for must say who it is for, at most ${RESERVE_FOR_MAX} characters` };
+  const minutes = change.minutes === undefined ? RESERVE_MINUTES : Number(change.minutes);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > RESERVE_MAX_MINUTES) {
+    return { error: `minutes must be a whole number from 1 to ${RESERVE_MAX_MINUTES}` };
+  }
+  const preferred = change.preferred === undefined ? undefined : Number(change.preferred);
+  if (preferred !== undefined && !(Number.isInteger(preferred) && preferred >= 1024 && preferred <= 65535)) {
+    return { error: "preferred must be a whole number from 1024 to 65535" };
+  }
+  const snap = await collectSnapshot();
+  if (snap.partial) return { error: "The scan missed some ports just now; try again" };
+  const until = new Date(Date.now() + minutes * 60_000).toISOString();
+  const port = await reservePort({ for: who, until }, new Set(snap.ports.map((p) => p.port)), canBind, preferred);
+  return port ? { port, until } : { error: "No free port from 3000 to 9999" };
+}
+
+/** Give a reserved port back. */
+export async function releasePort(port: number): Promise<{ error?: string }> {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { error: "port must be a whole number from 1 to 65535" };
+  if (!(await readPortPrefs())[port]?.reserved) return { error: `:${port} isn't reserved` };
+  await setPortPref(port, { reserved: undefined });
+  return {};
+}
+
+/** Pin, hide, watch or annotate a port number. Only booleans and a short note are stored. */
 export async function updatePortPref(port: number, change: Record<string, unknown>): Promise<{ error?: string }> {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return { error: "port must be a whole number from 1 to 65535" };
   if (change.note !== undefined && (typeof change.note !== "string" || change.note.length > NOTE_MAX)) {
     return { error: `note must be text of at most ${NOTE_MAX} characters` };
   }
-  for (const k of ["pinned", "hidden"] as const) {
+  for (const k of ["pinned", "hidden", "watched"] as const) {
     if (change[k] !== undefined && typeof change[k] !== "boolean") return { error: `${k} must be true or false` };
   }
   await setPortPref(port, {
     ...(change.pinned !== undefined && { pinned: change.pinned as boolean }),
     ...(change.hidden !== undefined && { hidden: change.hidden as boolean }),
+    ...(change.watched !== undefined && { watched: change.watched as boolean }),
     ...(change.note !== undefined && { note: (change.note as string).trim() }),
   });
   return {};

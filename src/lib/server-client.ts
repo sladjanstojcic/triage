@@ -3,7 +3,7 @@
  * State-changing routes want a same-origin request (api() in src/server/index.ts), so posts send the
  * server's own Origin, as the dashboard's page does.
  */
-import type { RemoteSnapshot, Snapshot } from "@/lib/collect/types";
+import type { PortPref, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
 
 export const DEFAULT_URL = `http://127.0.0.1:${process.env.PORT ?? 4777}`;
 
@@ -28,5 +28,9 @@ export function triageClient(baseUrl: string) {
     remote: () => call<RemoteSnapshot[]>("/api/remote"),
     stopProcess: (pid: number, force = false) => call<object>("/api/stop", { pid, force }),
     stopContainers: (ids: string[]) => call<object>("/api/containers", { action: "stop", ids }),
+    setPortPref: (port: number, change: PortPref) => call<object>("/api/ports/pref", { port, ...change }),
+    reservePort: (body: { for: string; preferred?: number; minutes?: number }) =>
+      call<{ port: number; until: string }>("/api/ports/reserve", body),
+    releasePort: (port: number) => call<object>("/api/ports/release", { port }),
   };
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type AttentionItem, attentionItems, newAlerts } from "./attention";
+import { type AttentionItem, attentionItems, newAlerts, watchChanges, watchedPorts } from "./attention";
 import type { RemoteSnapshot, Snapshot } from "./collect/types";
 import { findConflicts } from "./grouping";
 
@@ -165,4 +165,22 @@ test("newAlerts: new errors, warnings and forgotten servers once; not other info
   assert.deepEqual(keys(newAlerts(items, new Set(), announced, 1000 + 60_000)), ["mbpro:disk"]);
   // back after half an hour: announced again
   assert.deepEqual(keys(newAlerts(items.slice(0, 1), new Set(), announced, 1000 + 31 * 60_000)), ["mbpro:shared:3000"]);
+});
+
+test("watched ports: up and down between scans; a new watch and a quick restart say nothing", () => {
+  const row = (port: number, pid: number) =>
+    ({ port, address: "127.0.0.1", ownerKind: "process", pid, processName: "node", owner: "next", system: false,
+      project: { root: "/p/shop", name: "shop", isWorktree: false } }) as Snapshot["ports"][number];
+  const prefs = { "3000": { watched: true }, "5432": { watched: true }, "8080": { pinned: true } };
+  const before = watchedPorts(snap({ ports: [row(3000, 1), row(8080, 2)], portPrefs: prefs }));
+  assert.deepEqual([...before], [[3000, "shop"], [5432, ""]]);
+  // 3000 stopped, 5432 started
+  const after = new Map([[3000, ""], [5432, "postgres"]]);
+  assert.deepEqual(watchChanges(before, after), [
+    { port: 3000, up: false, what: "shop" },
+    { port: 5432, up: true, what: "postgres" },
+  ]);
+  // restarted with another pid: still up, no change; 9000 only just watched: no change
+  const restarted = watchedPorts(snap({ ports: [row(3000, 7)], portPrefs: { ...prefs, "9000": { watched: true } } }));
+  assert.deepEqual(watchChanges(before, restarted), []);
 });

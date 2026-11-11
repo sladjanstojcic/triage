@@ -27,6 +27,8 @@ export type Origin = {
   agent?: string;
   /** its launcher is gone: nothing that started it is still attached */
   detached: boolean;
+  /** a Homebrew service (`brew services`): the formula, which launchd restarts if only its process is killed */
+  brewService?: string;
 };
 
 /** The process a stop signals and everything below it: what the stop ends, and what it costs right now. */
@@ -53,7 +55,7 @@ export type LocalProcess = {
   origin?: Origin;
 };
 
-export type ContainerAction = "start" | "stop" | "restart";
+export type ContainerAction = "start" | "stop" | "restart" | "pause" | "unpause";
 
 export type ContainerPort = {
   hostIp: string;
@@ -157,6 +159,8 @@ export type PortRow = {
   system: boolean;
   /** set when this port can be stopped from the UI (process or ssh tunnel, never system) */
   stopPid?: number;
+  /** a Homebrew service: stopping it runs `brew services stop <formula>`, since launchd would restart a killed process */
+  brewService?: string;
   /** docker-owned ports: the container behind it (pid is only the Docker/OrbStack port proxy) */
   containerId?: string;
   /** what it speaks (collect/protocol.ts); undefined for system ports and until the first look finishes */
@@ -164,7 +168,15 @@ export type PortRow = {
 };
 
 /** What you set on a port number (port-prefs.ts): pinned to the top, hidden from the lists, a note. */
-export type PortPref = { pinned?: boolean; hidden?: boolean; note?: string };
+/** What you set on a port number; `watched` makes the menu bar app notify when the port starts or stops listening. */
+export type PortPref = {
+  pinned?: boolean;
+  hidden?: boolean;
+  watched?: boolean;
+  note?: string;
+  /** handed to a coding agent: no other request gets this port until `until` (ISO), listening or not */
+  reserved?: { for: string; until: string };
+};
 
 /** Used and total of a resource, in bytes (memory, swap, disk). */
 export type Usage = { used: number; total: number };
