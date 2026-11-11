@@ -6,7 +6,7 @@ import { type AttentionItem, attentionItems, isForgotten, newAlerts } from "@/li
 import type { Protocol, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
 import { isWeb, localUrl, tildify } from "@/lib/format";
 import { findConflicts, groupByProject, type ProjectGroup } from "@/lib/grouping";
-import { impactLines, processImpact } from "@/lib/impact";
+import { stopPlan } from "@/lib/report";
 import { triageClient } from "@/lib/server-client";
 import type { Tab } from "@/lib/tabs";
 import { SHORTCUTS, type Settings } from "./settings";
@@ -121,18 +121,19 @@ export function startTray(d: TrayDeps) {
     if (!snap) return;
     const row = g.ports.find((p) => p.stopPid === stopPid);
     if (!row) return;
-    const viaCli = stopPid !== row.pid;
-    const command = viaCli ? snap.processes.find((p) => p.pid === row.pid)?.parentCommand : row.owner;
-    const also = impactLines(processImpact(snap, stopPid), row.port);
+    // the wording and the "also goes down" lines are the CLI's; this row is the one the menu item names
+    const plan = stopPlan(snap, row.port, row);
+    if (!plan.target) return;
+    const command = stopPid !== row.pid ? snap.processes.find((p) => p.pid === row.pid)?.parentCommand : row.owner;
     app.focus({ steal: true });
     const { response } = await dialog.showMessageBox({
       type: "warning",
-      message: `Kill :${row.port}${g.project ? ` (${g.project.name})` : ""}?`,
+      message: `${plan.title}?`,
       detail: [
-        `Sends SIGTERM to pid ${stopPid}${viaCli ? `, the dev CLI that started the server on :${row.port}` : ""}.`,
+        plan.action,
         command && tildify(command),
         row.folder && tildify(row.folder),
-        also.length > 0 && `Also goes down:\n${also.map((l) => `• ${l}`).join("\n")}`,
+        plan.alsoGoesDown.length > 0 && `Also goes down:\n${plan.alsoGoesDown.map((l) => `• ${l}`).join("\n")}`,
       ]
         .filter(Boolean)
         .join("\n\n"),

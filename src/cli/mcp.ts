@@ -105,10 +105,12 @@ async function callTool(api: Client, name: string, args: Args): Promise<unknown>
 export function serveMcp(api: Client, version: string) {
   const send = (msg: object) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...msg })}\n`);
 
-  async function handle(msg: { id?: string | number | null; method?: string; params?: Args }) {
-    const { id, method, params = {} } = msg;
+  async function handle(msg: { id?: string | number | null; method?: string; params?: Args | null }) {
+    const { id, method } = msg;
     // a notification (no id) never gets a reply
     if (id === undefined) return;
+    const params = msg.params ?? {};
+    if (typeof params !== "object" || Array.isArray(params)) return send({ id, error: { code: -32602, message: "params must be an object" } });
     if (method === "initialize") {
       const asked = String(params.protocolVersion ?? "");
       return send({
@@ -144,7 +146,11 @@ export function serveMcp(api: Client, version: string) {
     } catch {
       return send({ id: null, error: { code: -32700, message: "Parse error" } });
     }
-    void handle(msg);
+    if (typeof msg !== "object" || msg === null || Array.isArray(msg)) {
+      return send({ id: null, error: { code: -32600, message: "Invalid Request" } });
+    }
+    // an unexpected throw answers this one message; it must not end the server
+    handle(msg).catch((e) => send({ id: msg.id ?? null, error: { code: -32603, message: e instanceof Error ? e.message : String(e) } }));
   });
   console.error(`Triage MCP server ${version} on stdio`);
 }

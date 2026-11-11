@@ -4,7 +4,7 @@
  * what ran this morning that doesn't run now. Pure; the file it lives in is src/server/history-store.ts.
  */
 import type { PortRow, Protocol, Snapshot } from "@/lib/collect/types";
-import { portReport } from "@/lib/report";
+import { portOwner } from "@/lib/report";
 
 /** One port starting (`up`) or stopping, as seen by the scan at `at`. */
 export type PortEvent = {
@@ -28,10 +28,11 @@ const keyOf = (r: PortRow) => `${r.port}/${r.containerId ?? r.pid}`;
 /** What a scan shows as listening, by key; system services are left out, they only add noise. */
 export function listeners(snap: Snapshot): Map<string, Listener> {
   const out = new Map<string, Listener>();
+  const procs = new Map(snap.processes.map((p) => [p.pid, p]));
   for (const r of snap.ports) {
     if (r.system || out.has(keyOf(r))) continue;
-    const report = portReport(snap, r);
-    out.set(keyOf(r), { key: keyOf(r), port: r.port, what: report.owner, project: report.project, protocol: r.protocol });
+    const { owner, project } = portOwner(snap, r, procs);
+    out.set(keyOf(r), { key: keyOf(r), port: r.port, what: owner, project, protocol: r.protocol });
   }
   return out;
 }

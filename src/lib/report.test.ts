@@ -59,6 +59,8 @@ test("stopPlan: refuses system ports, empty ports and ports two owners share", (
   assert.match(stopPlan(next, 9999).error!, /Nothing is listening/);
   const shared = snap({ ports: [row(4099, 1, { stopPid: 1 }), row(4099, 2, { stopPid: 2 })] });
   assert.match(stopPlan(shared, 4099).error!, /2 owners/);
+  // the listing agrees: `triage stop 4099` would refuse, so neither owner is stoppable
+  assert.deepEqual(portReports(shared).map((p) => p.stoppable), [false, false]);
 });
 
 test("stopPlan: a container's port stops the container", () => {

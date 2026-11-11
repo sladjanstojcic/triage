@@ -2,7 +2,7 @@
  * What the `triage` CLI and its MCP server say about ports: plain data, so the text output, `--json` and
  * the agent tools share one rule, and it is tested without a terminal.
  */
-import type { PortRow, Snapshot } from "@/lib/collect/types";
+import type { LocalProcess, PortRow, Snapshot } from "@/lib/collect/types";
 import { isExposed, shortCommand, tildify } from "@/lib/format";
 import { displayCommand, isListed, portPref } from "@/lib/grouping";
 import { containerImpact, impactLines, processImpact } from "@/lib/impact";
@@ -34,10 +34,20 @@ export type PortReport = {
   note?: string;
 };
 
+/** Who holds a port, as the CLI names it: the container and its image, or the short command; and its project. */
+export function portOwner(snap: Snapshot, row: PortRow, procs: Map<number, LocalProcess>) {
+  const container = row.containerId ? snap.containers.find((c) => c.id.startsWith(row.containerId!)) : undefined;
+  return {
+    owner: container ? `${container.name} (${container.image})` : shortCommand(tildify(displayCommand(row, procs))),
+    command: container ? undefined : tildify(displayCommand(row, procs)),
+    project: row.project ? (row.project.subpath ? `${row.project.name}/${row.project.subpath}` : row.project.name) : undefined,
+  };
+}
+
 export function portReport(snap: Snapshot, row: PortRow): PortReport {
   const procs = new Map(snap.processes.map((p) => [p.pid, p]));
   const origin = procs.get(row.pid)?.origin;
-  const container = row.containerId ? snap.containers.find((c) => c.id.startsWith(row.containerId!)) : undefined;
+  const { owner, command, project } = portOwner(snap, row, procs);
   return {
     port: row.port,
     address: row.address,
@@ -45,15 +55,16 @@ export function portReport(snap: Snapshot, row: PortRow): PortReport {
     exposed: isExposed(row.address),
     kind: row.ownerKind,
     pid: row.pid,
-    owner: container ? `${container.name} (${container.image})` : shortCommand(tildify(displayCommand(row, procs))),
-    command: container ? undefined : tildify(displayCommand(row, procs)),
-    project: row.project ? (row.project.subpath ? `${row.project.name}/${row.project.subpath}` : row.project.name) : undefined,
+    owner,
+    command,
+    project,
     branch: row.project?.branch,
     folder: row.folder ? tildify(row.folder) : undefined,
     startedBy: [origin?.agent, origin?.app, origin?.terminal].filter(Boolean).join(" · ") || undefined,
     detached: !!origin?.detached,
     system: row.system,
-    stoppable: !!stopPlan(snap, row.port, row).target,
+    // by port, as `triage stop` goes: a port two owners bind is refused there, so it isn't stoppable here
+    stoppable: !!stopPlan(snap, row.port).target,
     note: portPref(snap, row.port).note,
   };
 }
