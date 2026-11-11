@@ -3,15 +3,16 @@ import type { ContainerPort, ContainerSummary, PortRow } from "@/lib/collect/typ
 import { count } from "@/lib/format";
 import { containerGroups, containerTech, isUnhealthy, shortContainerName } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
-import { CopyPath, PortLink, ProjectBadges, TechBadge, TunnelLinks } from "./cells";
+import { CopyPath, CopyUrl, PortLink, ProtocolTag, ProjectBadges, TechBadge, TunnelLinks } from "./cells";
 import { type Column, GroupedTable } from "./grouped-table";
+import { LogsButton } from "./logs";
 import { ContainerGroupActions, ContainerRowActions, type RemoteHostRef } from "./stop";
 
 /**
  * Published ports as `:host → container`. Local ones open in the browser; a remote host's are plain text
  * (they live on that host; the SSH tunnel column says how to reach them).
  */
-function PublishedPorts({ ports, remote }: { ports: ContainerPort[]; remote: boolean }) {
+function PublishedPorts({ ports, remote, image }: { ports: ContainerPort[]; remote: boolean; image: string }) {
   if (ports.length === 0) return <span className="text-xs text-muted-foreground">internal only</span>;
   return (
     <div className="flex flex-wrap gap-x-3">
@@ -20,7 +21,11 @@ function PublishedPorts({ ports, remote }: { ports: ContainerPort[]; remote: boo
           {remote ? (
             <span className="font-mono font-semibold tabular-nums">:{p.hostPort}</span>
           ) : (
-            <PortLink port={p.hostPort} address={p.hostIp || "*"} className="text-xs" />
+            <>
+              <PortLink port={p.hostPort} address={p.hostIp || "*"} protocol={p.protocol} className="text-xs" />
+              <CopyUrl port={p.hostPort} address={p.hostIp || "*"} protocol={p.protocol} hint={image} />
+              <ProtocolTag protocol={p.protocol} />
+            </>
           )}
           <ArrowRightIcon className="size-3 text-muted-foreground" />
           <span className="font-mono text-muted-foreground">{p.containerPort}</span>
@@ -36,7 +41,7 @@ const columns = (remote: boolean): Column[] => [
   { header: "Status", width: "w-32" },
   { header: "Ports (host → container)" },
   ...(remote ? [{ header: "SSH tunnel (this Mac → host)", width: "w-72" }] : []),
-  { header: "", width: "w-16" },
+  { header: "", width: "w-24" },
 ];
 
 /**
@@ -91,13 +96,16 @@ export function ContainerTable({
             </span>
           )}
         </span>,
-        <PublishedPorts key="ports" ports={c.ports} remote={!!host} />,
+        <PublishedPorts key="ports" ports={c.ports} remote={!!host} image={c.image} />,
         ...(host
           ? [
               <TunnelLinks key="tunnel" links={tunnelLinks?.(c.ports.map((p) => p.hostPort)) ?? []} />,
             ]
           : []),
-        <ContainerRowActions key="actions" container={c} host={host} />,
+        <div key="actions" className="flex justify-end">
+          <LogsButton container={c} host={host} />
+          <ContainerRowActions container={c} host={host} />
+        </div>,
       ],
     })),
   }));

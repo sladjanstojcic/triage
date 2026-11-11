@@ -3,10 +3,11 @@ import { Fragment } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { Container, PortRow, Snapshot } from "@/lib/collect/types";
 import { count, formatMem, humanElapsed } from "@/lib/format";
-import { type Conflicts, containerGroups, containerTech, displayCommand, groupByProject, isUnhealthy, type ProjectGroup, shortContainerName } from "@/lib/grouping";
+import { type Conflicts, containerGroups, containerTech, displayCommand, groupByProject, isUnhealthy, portPref, type ProjectGroup, shortContainerName } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
-import { Command, ConflictBadge, CopyPath, Muted, OriginLine, PortCell, PortLink, ProjectBadges, TechBadge } from "../cells";
+import { Command, ConflictBadge, CopyPath, CopyUrl, Muted, ProtocolTag, OriginLine, PortCell, PortLink, ProjectBadges, TechBadge } from "../cells";
 import { type Column, GroupedTable, type GroupRow, type TableGroup } from "../grouped-table";
+import { PortMenu, PortNote } from "../port-menu";
 import { ContainerActionButton, PortStop } from "../stop";
 
 const COLUMNS: Column[] = [
@@ -14,10 +15,20 @@ const COLUMNS: Column[] = [
   { header: "Type", width: "w-32" },
   { header: "What" },
   { header: "Uptime", width: "w-24", align: "right" },
-  { header: "Memory", width: "w-20", align: "right" },
+  { header: "Usage", width: "w-24", align: "right" },
   { header: "PID", width: "w-20", align: "right" },
-  { header: "", width: "w-10" },
+  { header: "", width: "w-16" },
 ];
+
+/** Memory, with CPU underneath: what a server or stack costs right now. */
+function Usage({ memMB, cpu }: { memMB: number; cpu: number }) {
+  return (
+    <Muted>
+      {formatMem(memMB)}
+      <span className="block text-[11px]">{Math.round(cpu * 10) / 10}% CPU</span>
+    </Muted>
+  );
+}
 
 function GroupIcon({ icon }: { icon: ProjectGroup["icon"] }) {
   const cls = "size-4 shrink-0 text-muted-foreground";
@@ -32,23 +43,28 @@ export function ProjectsView({ snap, showSystem, conflicts }: { snap: Snapshot; 
 
   const portRow = (p: PortRow): GroupRow => {
     const proc = procs.get(p.pid);
+    const pref = portPref(snap, p.port);
     return {
       key: `${p.pid}-${p.port}`,
       className: cn(conflicts.has(p.port) && "bg-destructive/5"),
       cells: [
-        <PortCell key="port" port={p.port} address={p.address} />,
+        <PortCell key="port" port={p.port} address={p.address} protocol={p.protocol} pinned={pref.pinned} hint={`${p.tech ?? ""} ${p.owner}`} />,
         <TechBadge key="type" tech={p.tech} />,
         <Fragment key="what">
           <ConflictBadge row={p} conflicts={conflicts} />
           {p.project?.subpath && <span className="block font-mono text-xs font-medium break-all">{p.project.subpath}</span>}
           <Command text={displayCommand(p, procs)} />
+          <PortNote pref={pref} />
           <OriginLine origin={proc?.origin} />
         </Fragment>,
         proc && <Muted key="uptime">{humanElapsed(proc.elapsed)}</Muted>,
         // the whole server: dev CLI, server and workers, which is what a kill frees
-        proc && <Muted key="mem">{formatMem(proc.stopTree.memMB)}</Muted>,
+        proc && <Usage key="usage" memMB={proc.stopTree.memMB} cpu={proc.stopTree.cpu} />,
         <Muted key="pid">{p.pid}</Muted>,
-        <PortStop key="stop" row={p} procs={procs} />,
+        <div key="actions" className="flex justify-end">
+          <PortMenu port={p.port} pref={pref} />
+          <PortStop row={p} procs={procs} />
+        </div>,
       ],
     };
   };
@@ -76,14 +92,18 @@ export function ProjectsView({ snap, showSystem, conflicts }: { snap: Snapshot; 
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
             {ports.map(({ c, p }) => (
               <span key={`${c.id}-${p.hostPort}`} className="inline-flex items-center gap-1.5 text-xs">
-                <PortLink port={p.hostPort} address={p.hostIp || "*"} className="text-xs" />
+                <PortLink port={p.hostPort} address={p.hostIp || "*"} protocol={p.protocol} className="text-xs" />
+                <CopyUrl port={p.hostPort} address={p.hostIp || "*"} protocol={p.protocol} hint={`${c.image} ${c.name}`} />
+                <ProtocolTag protocol={p.protocol} />
                 <span className="text-muted-foreground">{shortContainerName(c)}</span>
               </span>
             ))}
           </div>
         </Fragment>,
         <Muted key="uptime">{cs[0].status.replace(/^Up /, "")}</Muted>,
-        cs.some((c) => c.memMB !== undefined) ? <Muted key="mem">{formatMem(cs.reduce((sum, c) => sum + (c.memMB ?? 0), 0))}</Muted> : null,
+        cs.some((c) => c.memMB !== undefined) ? (
+          <Usage key="usage" memMB={cs.reduce((sum, c) => sum + (c.memMB ?? 0), 0)} cpu={cs.reduce((sum, c) => sum + (c.cpu ?? 0), 0)} />
+        ) : null,
         null,
         <ContainerActionButton key="stop" action="stop" containers={cs} />,
       ],
