@@ -58,6 +58,20 @@ const SCHEME: Partial<Record<Protocol, string>> = {
   socks: "socks5",
 };
 
+const BY_HINT: [RegExp, Protocol][] = [
+  [/postgres|supabase_db_/i, "postgres"],
+  [/mysql|mariadb/i, "mysql"],
+  [/redis|valkey/i, "redis"],
+  [/mongo/i, "mongodb"],
+];
+
+/** The protocol a database port speaks, from its tech, command or container image; undefined for anything else. */
+export function protocolFromHint(hint: string): Protocol | undefined {
+  // PostgREST and postgres-meta (Supabase) serve HTTP, whatever their names say
+  if (/postgrest|postgres-meta/i.test(hint)) return undefined;
+  return BY_HINT.find(([re]) => re.test(hint))?.[1];
+}
+
 /** A port a browser can open: it answered HTTP, or nobody has looked yet. */
 export const isWeb = (protocol?: Protocol) => !protocol || protocol === "http" || protocol === "https";
 
@@ -68,11 +82,7 @@ export const isWeb = (protocol?: Protocol) => !protocol || protocol === "http" |
  */
 export function connectionUrl(address: string, port: number, hint = "", protocol?: Protocol): string {
   const host = localUrl(address, port).replace(/^http:\/\//, "");
-  const db = /postgres/i.test(hint) && !/postgrest|postgres-meta/i.test(hint) ? "postgres"
-    : /redis|valkey/i.test(hint) ? "redis"
-    : /mysql|mariadb/i.test(hint) ? "mysql"
-    : /mongo/i.test(hint) ? "mongodb"
-    : undefined;
+  const db = protocolFromHint(hint);
   const proto = protocol && protocol !== "tcp" && protocol !== "tls" ? protocol : (db ?? protocol);
   if (proto === "postgres" && /supabase\/postgres:|supabase_db_/i.test(hint)) return `postgresql://postgres:postgres@${host}/postgres`;
   return `${(proto && SCHEME[proto]) ?? "http"}://${host}`;

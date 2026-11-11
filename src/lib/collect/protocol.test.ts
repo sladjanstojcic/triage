@@ -3,7 +3,8 @@ import { once } from "node:events";
 import http from "node:http";
 import net from "node:net";
 import { test } from "node:test";
-import { classifyReply, probe, protocolFromHint } from "./protocol";
+import { protocolFromHint } from "@/lib/format";
+import { classifyReply, probe, protocolFromPort } from "./protocol";
 
 test("protocolFromHint: databases by tech, command or image; HTTP services with database names are not", () => {
   assert.equal(protocolFromHint("Postgres /opt/homebrew/opt/postgresql@17/bin/postgres -D x"), "postgres");
@@ -45,4 +46,11 @@ test("probe: an HTTP server, a server with a banner, and one that says nothing",
     held.forEach((s) => s.destroy());
     for (const s of [web, sshd, quiet]) s.close();
   }
+});
+
+test("protocolFromPort: well-known database ports only", () => {
+  assert.equal(protocolFromPort(5432), "postgres");
+  assert.equal(protocolFromPort(6379), "redis");
+  assert.equal(protocolFromPort(3000), undefined);
+  assert.equal(protocolFromPort(undefined), undefined);
 });

@@ -6,21 +6,16 @@
  */
 import net from "node:net";
 import tls from "node:tls";
+import { protocolFromHint } from "@/lib/format";
 import type { Protocol } from "./types";
 
+// Well-known database ports. Only an ssh forward uses this: what it reaches is on another machine, so the
+// command can't say, and a probe would land in that database's log.
+const BY_PORT: Record<number, Protocol> = { 5432: "postgres", 3306: "mysql", 6379: "redis", 27017: "mongodb" };
 
-const BY_HINT: [RegExp, Protocol][] = [
-  [/postgres|supabase_db_/i, "postgres"],
-  [/mysql|mariadb/i, "mysql"],
-  [/redis|valkey/i, "redis"],
-  [/mongo/i, "mongodb"],
-];
-
-/** The protocol a database port speaks, from its tech, command or container image; undefined for anything else. */
-export function protocolFromHint(hint: string): Protocol | undefined {
-  // PostgREST and postgres-meta (Supabase) serve HTTP, whatever their names say
-  if (/postgrest|postgres-meta/i.test(hint)) return undefined;
-  return BY_HINT.find(([re]) => re.test(hint))?.[1];
+/** The protocol a database's well-known port speaks; undefined for any other port. */
+export function protocolFromPort(port: number | undefined): Protocol | undefined {
+  return port === undefined ? undefined : BY_PORT[port];
 }
 
 /** What the first bytes a server sends (a banner, or its answer to a plain HTTP request) say it speaks. */
@@ -97,14 +92,15 @@ const known = new Map<string, { protocol: Protocol; at: number }>();
 const pending = new Set<string>();
 
 /**
- * The protocol of `port` held by `pid`, from a database hint or an earlier look; undefined while the first
- * look runs in the background (the next scan has it). `host` is where to connect: a wildcard bind is
+ * The protocol of `port` held by `owner`, from a database hint or an earlier look; undefined while the first
+ * look runs in the background (the next scan has it). `owner` is the pid, or the container id for a
+ * container (its pid is Docker's long-lived port proxy). `host` is where to connect: a wildcard bind is
  * reached on loopback.
  */
-export function cachedProtocol(pid: number, port: number, address: string, hint: string): Protocol | undefined {
+export function cachedProtocol(owner: number | string, port: number, address: string, hint: string): Protocol | undefined {
   const fromHint = protocolFromHint(hint);
   if (fromHint) return fromHint;
-  const key = `${pid}:${port}`;
+  const key = `${owner}:${port}`;
   const hit = known.get(key);
   if (pending.has(key) || (hit && (hit.protocol !== "tcp" || Date.now() - hit.at < QUIET_RECHECK_MS))) return hit?.protocol;
   // pids and ports change over a long session; a fresh start costs one more look per port
