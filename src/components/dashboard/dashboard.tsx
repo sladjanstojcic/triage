@@ -7,13 +7,14 @@ import type { RemoteSnapshot, Snapshot } from "@/lib/collect/types";
 import { matches } from "@/lib/format";
 import { TABS, type Tab, tabFromPath, tabLabel } from "@/lib/tabs";
 import { cn } from "@/lib/utils";
-import { containerGroups, findConflicts, groupByProject, isUp, projectCount, sshMachines, visiblePorts } from "@/lib/grouping";
+import { containerGroups, findConflicts, groupByProject, hiddenCount, isUp, projectCount, sshMachines, visiblePorts } from "@/lib/grouping";
 import { AddHostSheet } from "./add-host-sheet";
 import { CollapseContext, groupKey } from "./grouped-table";
 import { RefreshContext, ScanContext } from "./stop";
 import { ThemeMenu } from "./theme-menu";
 import { usePolling } from "./use-polling";
 import { DockerView } from "./views/docker";
+import { HistoryView } from "./views/history";
 import { NetworkView } from "./views/network";
 import { OverviewView } from "./views/overview";
 import { PortsView } from "./views/ports";
@@ -158,8 +159,13 @@ export function Dashboard() {
                 {paused ? "paused · " : ""}updated {new Date(snap.at).toLocaleTimeString()}
               </span>
             )}
-            <Button variant={showSystem ? "secondary" : "ghost"} size="sm" onClick={() => setShowSystem((s) => !s)}>
-              {showSystem ? "Hide" : "Show"} system
+            <Button
+              variant={showSystem ? "secondary" : "ghost"}
+              size="sm"
+              title="System services and apps, and the ports you hid"
+              onClick={() => setShowSystem((s) => !s)}
+            >
+              {showSystem ? "Hide hidden" : `Show hidden${snap && hiddenCount(snap) ? ` (${hiddenCount(snap)})` : ""}`}
             </Button>
             <Button variant="ghost" size="icon-sm" title={paused ? "Resume auto-refresh" : "Pause auto-refresh"} onClick={() => setPaused((p) => !p)}>
               {paused ? <PlayIcon /> : <PauseIcon />}
@@ -251,6 +257,9 @@ export function Dashboard() {
               </TabsContent>
               <TabsContent value="ssh">
                 <NetworkView snap={view} remote={remote} />
+              </TabsContent>
+              <TabsContent value="history">
+                <HistoryView snap={snap!} query={query} />
               </TabsContent>
             </>
           )}

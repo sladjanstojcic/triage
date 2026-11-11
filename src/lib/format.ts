@@ -1,4 +1,5 @@
 /** Display helpers shared by every view. Pure functions: safe on server and client. */
+import type { Protocol } from "@/lib/collect/types";
 
 /** "/Users/me/x" or "/home/me/x" → "~/x", anywhere in a path or command line. */
 export function tildify(text: string): string {
@@ -42,6 +43,49 @@ export function localUrl(address: string, port: number) {
         ? `[${address}]`
         : address;
   return `http://${host}:${port}`;
+}
+
+const SCHEME: Partial<Record<Protocol, string>> = {
+  https: "https",
+  postgres: "postgresql",
+  mysql: "mysql",
+  redis: "redis",
+  mongodb: "mongodb",
+  ssh: "ssh",
+  smtp: "smtp",
+  pop3: "pop3",
+  imap: "imap",
+  socks: "socks5",
+};
+
+const BY_HINT: [RegExp, Protocol][] = [
+  [/postgres|supabase_db_/i, "postgres"],
+  [/mysql|mariadb/i, "mysql"],
+  [/redis|valkey/i, "redis"],
+  [/mongo/i, "mongodb"],
+];
+
+/** The protocol a database port speaks, from its tech, command or container image; undefined for anything else. */
+export function protocolFromHint(hint: string): Protocol | undefined {
+  // PostgREST and postgres-meta (Supabase) serve HTTP, whatever their names say
+  if (/postgrest|postgres-meta/i.test(hint)) return undefined;
+  return BY_HINT.find(([re]) => re.test(hint))?.[1];
+}
+
+/** A port a browser can open: it answered HTTP, or nobody has looked yet. */
+export const isWeb = (protocol?: Protocol) => !protocol || protocol === "http" || protocol === "https";
+
+/**
+ * What to paste into a client for a port: a URL with the scheme of its protocol, or of the database `hint`
+ * (tech, command or container image) names while the protocol is unknown. A Supabase CLI database gets its
+ * fixed local credentials (postgres / postgres), so the URL works as is.
+ */
+export function connectionUrl(address: string, port: number, hint = "", protocol?: Protocol): string {
+  const host = localUrl(address, port).replace(/^http:\/\//, "");
+  const db = protocolFromHint(hint);
+  const proto = protocol && protocol !== "tcp" && protocol !== "tls" ? protocol : (db ?? protocol);
+  if (proto === "postgres" && /supabase\/postgres:|supabase_db_/i.test(hint)) return `postgresql://postgres:postgres@${host}/postgres`;
+  return `${(proto && SCHEME[proto]) ?? "http"}://${host}`;
 }
 
 /** The search box: does any text in `value` contain `query`, ignoring case? An empty query matches. */

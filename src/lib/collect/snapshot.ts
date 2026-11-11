@@ -4,6 +4,8 @@ import { containerTech } from "@/lib/grouping";
 import { collectContainers } from "./docker";
 import { collectListeningProcesses, listProcesses } from "./local";
 import { cachedDockerDisk, collectMachine } from "./machine";
+import { readPortPrefs } from "@/lib/port-prefs";
+import { cachedProtocol, protocolFromPort } from "./protocol";
 import { collectSsh } from "./ssh";
 import { collectTailscale, collectTunnels } from "./tunnels";
 import type { Container, LocalProcess, PortRow, Snapshot, SshConnection } from "./types";
@@ -24,6 +26,7 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
           rows.push({
             ...base, ownerKind: "docker", owner: `${c.name} (:${cp.containerPort})`, containerId: c.id,
             folder: c.workdir, project: c.project, tech: containerTech(c), system: false,
+            protocol: cachedProtocol(c.id, l.port, l.address, `${c.image} ${c.name}`),
           });
           continue;
         }
@@ -38,6 +41,8 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
         rows.push({
           ...base, ownerKind: "ssh", owner: `${conn.target} → ${dest ?? "?"}`, sshTarget: conn.target, tech: "SSH tunnel", system: false,
           sshHost: conn.hostname ?? conn.target, remotePort: onHost ? fwd.destPort : undefined, stopPid: conn.stopPid,
+          // a -D forward is a SOCKS proxy; a -L forward speaks whatever the service behind it does
+          protocol: fwd?.kind === "D" ? "socks" : (protocolFromPort(fwd?.destPort) ?? cachedProtocol(p.pid, l.port, l.address, dest ?? "")),
         });
         continue;
       }
@@ -48,6 +53,8 @@ function buildPorts(procs: LocalProcess[], containers: Container[], ssh: SshConn
       rows.push({
         ...base, ownerKind: "process", owner: p.command, folder: p.cwd, project: p.project, tech: p.tech,
         system, stopPid: system || self ? undefined : p.stopPid,
+        // macOS services and apps aren't probed: their ports are hidden by default and none is a dev server
+        protocol: system ? undefined : cachedProtocol(p.pid, l.port, l.address, `${p.tech ?? ""} ${p.command}`),
       });
     }
   }
@@ -62,20 +69,27 @@ export async function collectSnapshot(): Promise<Snapshot> {
   const connections = Promise.all([psRows, listeningRows]).then(([ps, l]) =>
     Promise.all([collectSsh(ps, l.procs), collectTunnels(ps, l.procs)]),
   );
-  const [listening, [ssh, tunnels], docker, tailscale, machine] = await Promise.all([
+  const [listening, [ssh, tunnels], docker, tailscale, machine, portPrefs] = await Promise.all([
     listeningRows,
     connections,
     collectContainers(),
     collectTailscale(),
     collectMachine(),
+    readPortPrefs().catch(() => ({})),
   ]);
   if (listening.error) errors.push(`lsof: ${listening.error}`);
   if (docker.error) errors.push(docker.error);
 
+  const ports = buildPorts(listening.procs, docker.containers, ssh);
+  // with the proxy up but docker unanswered, container ports show as the proxy's own: not a real change
+  const partial = !!listening.error || (!!docker.error && listening.procs.some((p) => DOCKER_BACKEND.test(p.name) && p.listens.length > 0));
+  for (const c of docker.containers) {
+    for (const cp of c.ports) cp.protocol = ports.find((r) => r.containerId === c.id && r.port === cp.hostPort)?.protocol;
+  }
   return {
     at: new Date().toISOString(),
     hostname: os.hostname(),
-    ports: buildPorts(listening.procs, docker.containers, ssh),
+    ports,
     processes: listening.procs,
     containers: docker.containers,
     ssh,
@@ -83,6 +97,8 @@ export async function collectSnapshot(): Promise<Snapshot> {
     tailscale: tailscale.status,
     machine,
     dockerDisk: cachedDockerDisk(),
+    portPrefs,
     errors,
+    ...(partial && { partial }),
   };
 }

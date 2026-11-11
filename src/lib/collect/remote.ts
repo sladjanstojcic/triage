@@ -51,6 +51,9 @@ const PROBE_BODY = [
 // `docker system df` takes over a second, so a host runs it every DOCKER_DF_MS; between runs the last
 // result is reused.
 const dockerDfCache = new Map<string, { at: number; rows?: DockerDiskRow[] }>();
+/** The host's next probe runs `docker system df` again, after a cleanup changed it. */
+export const forgetDockerDisk = (sshTarget: string) => dockerDfCache.delete(sshTarget);
+
 const DOCKER_DF = `echo '##DOCKERDF'; docker system df --format '{{json .}}' 2>/dev/null || S docker system df --format '{{json .}}' 2>/dev/null`;
 
 /** The ##MACHINE lines of a Linux host → its identity and load. Memory in use is total minus available. */

@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BatteryChargingIcon, BatteryIcon, CheckCircle2Icon, CircleAlertIcon, InfoIcon, LaptopIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowRightIcon, BatteryChargingIcon, BatteryIcon, ShieldCheckIcon, CheckCircle2Icon, CircleAlertIcon, InfoIcon, LaptopIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
 import { use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { formatBytes, since } from "@/lib/format";
 import { type Conflicts, isUp, projectCount } from "@/lib/grouping";
 import { type Tab, tabLabel } from "@/lib/tabs";
 import { cn } from "@/lib/utils";
-import { ProcessStop, ScanContext } from "../stop";
+import { ProcessStop, PruneButton, ScanContext } from "../stop";
 
 
 /** This Mac and every remote host at a glance: what needs attention first, then one card per machine. */
@@ -120,6 +120,7 @@ function Attention({ items, machines, onTab }: { items: AttentionItem[]; machine
                   {item.detail && <p className="font-mono text-xs wrap-anywhere text-muted-foreground">{item.detail}</p>}
                 </div>
                 {item.stopPid && <AttentionStop stopPid={item.stopPid} />}
+                {item.prune && <AttentionPrune hostId={item.prune.hostId} machine={item.machine} />}
                 {item.tab && (
                   <Button variant="link" size="xs" className="shrink-0" onClick={() => onTab(item.tab!)}>
                     {tabLabel(item.tab)}
@@ -133,6 +134,13 @@ function Attention({ items, machines, onTab }: { items: AttentionItem[]; machine
       </CardContent>
     </Card>
   );
+}
+
+/** Free the Docker space an attention item is about. */
+function AttentionPrune({ hostId, machine }: { hostId?: number; machine: string }) {
+  const { snap, remote } = use(ScanContext);
+  const rows = hostId === undefined ? snap?.dockerDisk : remote?.find((h) => h.id === hostId)?.dockerDisk;
+  return <PruneButton hostId={hostId} machine={machine} rows={rows} />;
 }
 
 /** Stop the server an attention item is about, right from the list. */
@@ -218,6 +226,12 @@ function MachineCard({
                 <span className="inline-flex items-center gap-1">
                   · {m.battery.charging ? <BatteryChargingIcon className="size-3.5" /> : <BatteryIcon className="size-3.5" />}
                   {m.battery.percent}%{m.battery.remaining ? `, ${m.battery.remaining} left` : m.battery.charging ? ", charging" : ""}
+                </span>
+              )}
+              {m.vpn && m.vpn.length > 0 && (
+                <span className="inline-flex items-center gap-1" title="Connected VPNs">
+                  · <ShieldCheckIcon className="size-3.5" />
+                  VPN {m.vpn.join(", ")}
                 </span>
               )}
             </>

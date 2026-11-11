@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseBattery, parseDf, parseDockerDf, parseSize, parseSwapUsage, parseVmStat } from "./machine";
+import { parseBattery, parseDf, parseDockerDf, parseSize, parseSwapUsage, parseVmStat, parseVpnList } from "./machine";
 
 test("parseVmStat: active + wired + compressed pages", () => {
   const out = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
@@ -53,4 +53,13 @@ test("parseSize and parseDockerDf", () => {
       { type: "Build Cache", count: 0, active: 0, size: 0, reclaimable: 0 },
     ],
   );
+});
+
+test("parseVpnList: only connected services, by the name macOS shows", () => {
+  const out = `Available network connection services in the current set (*=enabled):
+* (Connected)      BB01C51F-377D-4374-B276-7962D1F1E7F7 VPN (io.tailscale.ipn.macos) "Tailscale"                      [VPN:io.tailscale.ipn.macos]
+* (Disconnected)   13A951A8-11B4-4D0C-84EA-D15EE6C8ED51 VPN (ch.protonvpn.mac) "ProtonVPN"                      [VPN:ch.protonvpn.mac]
+* (Connected)      0E2B0C64-0000-0000-0000-000000000000 VPN (com.wireguard.macos) "Work VPN"  [VPN:com.wireguard.macos]`;
+  assert.deepEqual(parseVpnList(out), ["Tailscale", "Work VPN"]);
+  assert.deepEqual(parseVpnList(""), []);
 });

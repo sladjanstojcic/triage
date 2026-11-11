@@ -61,6 +61,14 @@ export function parseDockerDf(text: string): DockerDiskRow[] {
     }));
 }
 
+/** `scutil --nc list` → names of the VPN services that are connected right now. */
+export function parseVpnList(out: string): string[] {
+  return out.split("\n").flatMap((line) => {
+    const m = line.match(/\(Connected\).*?"([^"]+)"/);
+    return m ? [m[1]] : [];
+  });
+}
+
 // CPU, cores, memory size, boot time and macOS version can't change while this server runs: read them once.
 let fixed: Promise<[ExecResult, ExecResult]> | undefined;
 
@@ -70,13 +78,14 @@ export async function collectMachine(): Promise<MachineInfo> {
     run("sysctl", ["-n", "machdep.cpu.brand_string", "hw.ncpu", "hw.memsize", "kern.boottime"]),
     run("sw_vers", ["-productVersion"]),
   ]);
-  const [[sys, ver], vm, swap, df, batt] = await Promise.all([
+  const [[sys, ver], vm, swap, df, batt, vpn] = await Promise.all([
     fixed,
     run("vm_stat", []),
     run("sysctl", ["-n", "vm.swapusage"]),
     // user data lives on the Data volume; "/" is the small sealed system volume
     run("df", ["-kP", "/System/Volumes/Data"]),
     run("pmset", ["-g", "batt"]),
+    run("scutil", ["--nc", "list"]),
   ]);
   const [cpu, cores, memsize, boot] = sys.stdout.split("\n");
   const total = Number(memsize) || os.totalmem();
@@ -93,6 +102,7 @@ export async function collectMachine(): Promise<MachineInfo> {
     swap: parseSwapUsage(swap.stdout),
     disk: df.ok ? parseDf(df.stdout, "/System/Volumes/Data") : undefined,
     battery: batt.ok ? parseBattery(batt.stdout) : undefined,
+    vpn: vpn.ok ? parseVpnList(vpn.stdout) : undefined,
   };
 }
 
@@ -108,4 +118,12 @@ export function cachedDockerDisk(): DockerDiskRow[] | undefined {
     });
   }
   return dockerDisk.rows;
+}
+
+/** Look again now, after something changed what docker can free (a cleanup). */
+export async function refreshDockerDisk() {
+  await dockerDisk.pending;
+  dockerDisk = { at: 0, rows: dockerDisk.rows };
+  cachedDockerDisk();
+  await dockerDisk.pending;
 }

@@ -1,30 +1,43 @@
 /** Table cell building blocks shared by every view. */
-import { ArrowRightIcon, CheckIcon, CopyIcon, ExternalLinkIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowRightIcon, CheckIcon, CopyIcon, ExternalLinkIcon, PinIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { Origin, PortRow, ProjectInfo, RemoteListener, RemoteSnapshot } from "@/lib/collect/types";
-import { isExposed, localUrl, shortCommand, tildify } from "@/lib/format";
+import type { Origin, PortRow, Protocol, ProjectInfo, RemoteListener, RemoteSnapshot } from "@/lib/collect/types";
+import { connectionUrl, isExposed, isWeb, localUrl, shortCommand, tildify } from "@/lib/format";
 import { type Conflicts, portOwnerName, remoteTarget } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
 
-/** A port on this Mac that opens in the browser; `tunnel` draws it in the SSH tunnel colour. */
+/**
+ * A port on this Mac that opens in the browser (https when it speaks TLS); `tunnel` draws it in the SSH
+ * tunnel colour. A port known to speak something else (a database, ssh) is plain text: a browser can't open it.
+ */
 export function PortLink({
   port,
   address,
+  protocol,
   tunnel = false,
   title,
   className,
 }: {
   port: number;
   address: string;
+  protocol?: Protocol;
   tunnel?: boolean;
   title?: string;
   className?: string;
 }) {
+  if (!isWeb(protocol)) {
+    return (
+      <span title={title} className={cn("font-mono text-sm font-semibold tabular-nums", className)}>
+        :{port}
+      </span>
+    );
+  }
+  const url = localUrl(address, port);
   return (
     <a
-      href={localUrl(address, port)}
+      href={protocol === "https" ? url.replace(/^http:/, "https:") : url}
       target="_blank"
       rel="noreferrer"
       title={title}
@@ -55,6 +68,7 @@ export function TunnelLinks({ links }: { links: { remotePort: number; tunnel: Po
             <PortLink
               port={tunnel.port}
               address={tunnel.address}
+              protocol={tunnel.protocol}
               tunnel
               title={`Opens localhost:${tunnel.port} on this Mac; ${via} forwards it to :${remotePort} on the host`}
               className="text-xs"
@@ -87,12 +101,63 @@ export function BindBadge({ address }: { address: string }) {
   );
 }
 
-/** Clickable local port with its bind address underneath. */
-export function PortCell({ port, address }: { port: number; address: string }) {
+/** Copies what a client needs for a local port: a database URL for a database, the browser URL otherwise. */
+export function CopyUrl({ port, address, hint, protocol }: { port: number; address: string; hint?: string; protocol?: Protocol }) {
+  const [copied, setCopied] = useState(false);
+  const url = connectionUrl(address, port, hint, protocol);
+  return (
+    <button
+      type="button"
+      title={`Copy ${url}`}
+      aria-label={`Copy ${url}`}
+      onClick={() => {
+        void navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      }}
+      className="inline-flex size-4 items-center justify-center text-muted-foreground opacity-50 hover:text-foreground hover:opacity-100"
+    >
+      {copied ? <CheckIcon className="size-3 text-emerald-500" /> : <CopyIcon className="size-3" />}
+    </button>
+  );
+}
+
+/** What a port speaks, small: web protocols in the link colour, anything else muted. */
+export function ProtocolTag({ protocol }: { protocol?: Protocol }) {
+  if (!protocol) return null;
+  return (
+    <span
+      title={protocol === "tcp" ? "Answers neither HTTP nor TLS" : undefined}
+      className={cn("font-mono text-[11px]", isWeb(protocol) ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground")}
+    >
+      {protocol}
+    </span>
+  );
+}
+
+/** Clickable local port with a copy button; its protocol and bind address underneath. `hint` names a database (see CopyUrl). */
+export function PortCell({
+  port,
+  address,
+  hint,
+  protocol,
+  pinned,
+}: {
+  port: number;
+  address: string;
+  hint?: string;
+  protocol?: Protocol;
+  pinned?: boolean;
+}) {
   return (
     <>
-      <PortLink port={port} address={address} />
-      <div className="leading-none">
+      <span className="inline-flex items-center gap-1">
+        {pinned && <PinIcon aria-label="Pinned" className="size-3 text-muted-foreground" />}
+        <PortLink port={port} address={address} protocol={protocol} />
+        <CopyUrl port={port} address={address} hint={hint} protocol={protocol} />
+      </span>
+      <div className="flex items-center gap-1.5 leading-none">
+        <ProtocolTag protocol={protocol} />
         <BindBadge address={address} />
       </div>
     </>

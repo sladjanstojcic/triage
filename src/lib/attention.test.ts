@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { attentionItems } from "./attention";
+import { type AttentionItem, attentionItems, newAlerts } from "./attention";
 import type { RemoteSnapshot, Snapshot } from "./collect/types";
 import { findConflicts } from "./grouping";
 
@@ -37,6 +37,20 @@ test("full disk, swap and Docker space are flagged; errors sort first", () => {
     ["error", "Swap 95% used"],
     ["warn", "Docker can free 18.0 GB"],
   ]);
+});
+
+test("the Docker item says how much cleanup frees and what it keeps", () => {
+  const disk = (rows: [string, number][]) =>
+    attentionItems(snap({ dockerDisk: rows.map(([type, r]) => ({ type, count: 1, active: 0, size: r, reclaimable: r })) }), [], new Map())
+      .find((i) => i.key.endsWith(":reclaim"));
+  assert.equal(disk([["Images", 18 * G], ["Build Cache", 4 * G]])?.detail, "unused images and build cache");
+  assert.equal(
+    disk([["Images", 18 * G], ["Local Volumes", 3 * G]])?.detail,
+    "18.0 GB in unused images and build cache; 3.0 GB in volumes and stopped containers, which cleanup keeps",
+  );
+  const volumesOnly = disk([["Local Volumes", 12 * G]]);
+  assert.match(volumesOnly!.detail!, /volumes/);
+  assert.equal(volumesOnly!.prune, undefined);
 });
 
 test("shared ports, closed launchers, exposed ports", () => {
@@ -134,4 +148,21 @@ test("a server the dashboard can't stop (itself) is never called forgotten", () 
   };
   const port = { port: 4777, address: "127.0.0.1", ownerKind: "process", pid: 7, processName: "node", owner: "tsx", system: false } as Snapshot["ports"][number];
   assert.deepEqual(attentionItems(snap({ processes: [p], ports: [port] }), [], new Map()), []);
+});
+
+test("newAlerts: new errors, warnings and forgotten servers once; not other info, not what was already there", () => {
+  const item = (key: string, level: AttentionItem["level"]): AttentionItem => ({ key, level, machine: "mbpro", text: key });
+  const items = [
+    item("mbpro:shared:3000", "error"),
+    item("mbpro:disk", "warn"),
+    item("mbpro:exposed", "info"),
+    item("mbpro:forgotten:42", "info"),
+  ];
+  const announced = new Map<string, number>();
+  const keys = (list: AttentionItem[]) => list.map((i) => i.key);
+  assert.deepEqual(keys(newAlerts(items, new Set(["mbpro:disk"]), announced, 1000)), ["mbpro:shared:3000", "mbpro:forgotten:42"]);
+  // gone for one scan and back within half an hour: not announced again
+  assert.deepEqual(keys(newAlerts(items, new Set(), announced, 1000 + 60_000)), ["mbpro:disk"]);
+  // back after half an hour: announced again
+  assert.deepEqual(keys(newAlerts(items.slice(0, 1), new Set(), announced, 1000 + 31 * 60_000)), ["mbpro:shared:3000"]);
 });

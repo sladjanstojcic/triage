@@ -2,7 +2,16 @@
  * How the snapshot is sliced into tables. Pure functions with no React: the views render these
  * groups, and the dashboard uses the same keys for expand/collapse all.
  */
-import type { Container, ContainerSummary, LocalProcess, SshConnection, PortRow, ProjectInfo, RemoteListener, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
+import type { Container, ContainerSummary, LocalProcess, PortPref, SshConnection, PortRow, ProjectInfo, RemoteListener, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
+
+/** Your settings for a port number: pinned, hidden, a note (none when nothing is set). */
+export const portPref = (snap: Snapshot, port: number): PortPref => snap.portPrefs?.[port] ?? {};
+
+/** Whether a port is listed: system services and ports you hid only while "Show hidden" is on. */
+export const isListed = (snap: Snapshot, p: PortRow, showHidden: boolean) => showHidden || (!p.system && !portPref(snap, p.port).hidden);
+
+const pinnedFirst = (snap: Snapshot) => (a: PortRow, b: PortRow) =>
+  Number(!!portPref(snap, b.port).pinned) - Number(!!portPref(snap, a.port).pinned);
 
 /**
  * Ports bound by more than one unrelated process — the classic "why is my app on the wrong server" bug.
@@ -69,8 +78,8 @@ export function groupByProject(snap: Snapshot, showSystem: boolean): ProjectGrou
   const inProject = (project: ProjectInfo) =>
     get(projectKey(project), { title: project.name, icon: "folder", project, folder: project.root });
 
-  for (const p of snap.ports) {
-    if (p.ownerKind !== "process" || (p.system && !showSystem)) continue;
+  for (const p of [...snap.ports].sort(pinnedFirst(snap))) {
+    if (p.ownerKind !== "process" || !isListed(snap, p, showSystem)) continue;
     if (p.project) {
       inProject(p.project).ports.push(p);
     } else {
@@ -89,8 +98,10 @@ export function groupByProject(snap: Snapshot, showSystem: boolean): ProjectGrou
     }
   }
   for (const g of groups.values()) g.usage = usageOf(g.ports, g.containers, snap.processes);
+  // a group with a pinned port comes first, then projects, other listeners and system
+  const pinned = (g: ProjectGroup) => g.ports.some((p) => portPref(snap, p.port).pinned);
   return [...groups.values()].sort((a, b) => {
-    const rank = (g: ProjectGroup) => (g.key.startsWith("~~") ? 3 : g.key.startsWith("~") ? 2 : 1);
+    const rank = (g: ProjectGroup) => (pinned(g) ? 0 : g.key.startsWith("~~") ? 3 : g.key.startsWith("~") ? 2 : 1);
     return rank(a) - rank(b) || a.title.localeCompare(b.title);
   });
 }
@@ -103,13 +114,16 @@ export function projectCount(snap: Snapshot): number {
 // ---------------------------------------------------------------------------
 // Ports
 
-/** The ports shown: system listeners only while "Show system" is on. */
-export const visiblePorts = (snap: Snapshot, showSystem: boolean) => snap.ports.filter((p) => showSystem || !p.system);
+/** The ports shown: system listeners and ports you hid only while "Show hidden" is on. */
+export const visiblePorts = (snap: Snapshot, showHidden: boolean) => snap.ports.filter((p) => isListed(snap, p, showHidden));
 
-/** Every listening port in one list, by port number: the "what is on :4099?" lookup. */
-export function sortedPorts(snap: Snapshot, showSystem: boolean): PortRow[] {
-  return visiblePorts(snap, showSystem).sort((a, b) => a.port - b.port || a.pid - b.pid);
+/** Every listening port in one list, pinned ones first, then by port number: the "what is on :4099?" lookup. */
+export function sortedPorts(snap: Snapshot, showHidden: boolean): PortRow[] {
+  return visiblePorts(snap, showHidden).sort((a, b) => pinnedFirst(snap)(a, b) || a.port - b.port || a.pid - b.pid);
 }
+
+/** Ports you hid that are listening right now: what "Show hidden" adds besides system services. */
+export const hiddenCount = (snap: Snapshot) => new Set(snap.ports.filter((p) => !p.system && portPref(snap, p.port).hidden).map((p) => p.port)).size;
 
 /** How a port's owner is named in conflict warnings: monorepo app, project, or process name. */
 export const portOwnerName = (p: PortRow) => p.project?.subpath ?? p.project?.name ?? p.processName;

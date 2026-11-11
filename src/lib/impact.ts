@@ -4,7 +4,7 @@
  * and their tests share one rule.
  */
 import type { PortRow, RemoteSnapshot, Snapshot, SshConnection, Tunnel } from "@/lib/collect/types";
-import { isLoopback } from "@/lib/format";
+import { count, isLoopback } from "@/lib/format";
 import { localTunnel } from "@/lib/grouping";
 
 export type Impact = {
@@ -62,4 +62,20 @@ export function containerImpact(snap: Snapshot, ids: string[]): Impact {
 export function remoteImpact(host: RemoteSnapshot | undefined, remotePorts: number[], localPorts: PortRow[]): PortRow[] {
   if (!host) return [];
   return remotePorts.flatMap((port) => localTunnel(host, port, localPorts) ?? []);
+}
+
+/**
+ * The "Also goes down" lines of a confirmation: the other ports (`port` itself is the one being stopped),
+ * the rest of the server's processes, and the tunnels and forwards left pointing at nothing.
+ */
+export function impactLines(impact: Impact | undefined, port?: number, localTunnels: PortRow[] = []): string[] {
+  const ports = [...new Set((impact?.ports ?? []).map((r) => r.port).filter((p) => p !== port))];
+  const others = impact?.otherProcesses ?? 0;
+  return [
+    ...(ports.length > 0 ? [`${count(ports.length, "more port")}: ${ports.map((p) => `:${p}`).join(" ")}`] : []),
+    ...(others > 0 ? [`${others} more ${others === 1 ? "process" : "processes"} of this server (dev CLI, workers, watchers)`] : []),
+    ...(impact?.tunnels ?? []).map((t) => `${t.kind}${t.publicUrl ? ` ${t.publicUrl}` : ""} stops working`),
+    ...(impact?.reverseForwards ?? []).map((f) => `ssh -R ${f.spec} on ${f.target} stops working`),
+    ...localTunnels.map((r) => `local tunnel :${r.port} (ssh ${r.sshTarget}) leads nowhere`),
+  ];
 }

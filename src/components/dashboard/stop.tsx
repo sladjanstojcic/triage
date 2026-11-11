@@ -1,12 +1,13 @@
-import { PlayIcon, RotateCcwIcon, SquareIcon, UnplugIcon, XIcon } from "lucide-react";
+import { PlayIcon, RotateCcwIcon, SquareIcon, Trash2Icon, UnplugIcon, XIcon } from "lucide-react";
 import { createContext, use, useState } from "react";
 import { toast } from "sonner";
-import { containerAction, stopProcess, stopRemoteProcess } from "@/lib/api";
+import { containerAction, dockerPrune, stopProcess, stopRemoteProcess } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import type { ContainerAction, ContainerSummary, LocalProcess, PortRow, RemoteListener, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
-import { count, tildify } from "@/lib/format";
+import type { ContainerAction, ContainerSummary, DockerDiskRow, LocalProcess, PortRow, RemoteListener, RemoteSnapshot, Snapshot } from "@/lib/collect/types";
+import { formatBytes, tildify } from "@/lib/format";
+import { PRUNABLE } from "@/lib/attention";
 import { isUp } from "@/lib/grouping";
-import { containerImpact, type Impact, processImpact, remoteImpact } from "@/lib/impact";
+import { containerImpact, type Impact, impactLines, processImpact, remoteImpact } from "@/lib/impact";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "./confirm";
 
@@ -17,23 +18,15 @@ export const RefreshContext = createContext<() => void>(() => {});
 export const ScanContext = createContext<{ snap?: Snapshot; remote?: RemoteSnapshot[] }>({});
 
 /** "Also goes down": other ports, child processes, and tunnels or forwards left pointing at nothing. */
-function ImpactNote({ impact, port, localTunnels = [] }: { impact?: Impact; port?: number; localTunnels?: PortRow[] }) {
-  const ports = (impact?.ports ?? []).filter((r) => r.port !== port);
-  const lines = [
-    ports.length > 0 && `${count(ports.length, "more port")}: ${[...new Set(ports.map((r) => `:${r.port}`))].join(" ")}`,
-    !!impact?.otherProcesses &&
-      `${impact.otherProcesses} more ${impact.otherProcesses === 1 ? "process" : "processes"} of this server (dev CLI, workers, watchers)`,
-    ...(impact?.tunnels ?? []).map((t) => `${t.kind}${t.publicUrl ? ` ${t.publicUrl}` : ""} stops working`),
-    ...(impact?.reverseForwards ?? []).map((f) => `ssh -R ${f.spec} on ${f.target} stops working`),
-    ...localTunnels.map((r) => `local tunnel :${r.port} (ssh ${r.sshTarget}) leads nowhere`),
-  ].filter(Boolean);
+function ImpactNote({ impact, port, localTunnels }: { impact?: Impact; port?: number; localTunnels?: PortRow[] }) {
+  const lines = impactLines(impact, port, localTunnels);
   if (lines.length === 0) return null;
   return (
     <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
       <p className="font-medium">Also goes down</p>
       <ul className="mt-1 list-disc pl-4">
         {lines.map((l) => (
-          <li key={l as string}>{l}</li>
+          <li key={l}>{l}</li>
         ))}
       </ul>
     </div>
@@ -72,7 +65,8 @@ function ActionButton({
   destructive?: boolean;
   force?: boolean;
   run: (force: boolean) => Promise<{ error?: string }>;
-  done: (force: boolean) => string;
+  /** the success toast; gets the action's result too */
+  done: (force: boolean, result: { error?: string }) => string;
 }) {
   const refresh = use(RefreshContext);
   const [open, setOpen] = useState(false);
@@ -80,7 +74,7 @@ function ActionButton({
   const act = (forced: boolean) => async () => {
     const res = await run(forced);
     if (!res.error) {
-      toast.success(done(forced));
+      toast.success(done(forced, res));
       // give the process or container a moment to change state before re-scanning
       setTimeout(refresh, 600);
     }
@@ -350,5 +344,32 @@ export function ContainerGroupActions({ containers: cs, host }: { containers: Co
       {down.length > 0 && <ContainerActionButton action="start" containers={down} host={host} label={`Start${all(down.length)}`} />}
       {up.length > 0 && <ContainerActionButton action="stop" containers={up} host={host} label={`Stop${all(up.length)}`} />}
     </>
+  );
+}
+
+/** Delete Docker images no container uses and the build cache, on this Mac or a remote host. */
+export function PruneButton({ hostId, machine, rows }: { hostId?: number; machine: string; rows?: DockerDiskRow[] }) {
+  const freeable = (rows ?? []).filter((r) => PRUNABLE.test(r.type) && r.reclaimable > 0);
+  const total = freeable.reduce((sum, r) => sum + r.reclaimable, 0);
+  return (
+    <ActionButton
+      icon={Trash2Icon}
+      title={`Free Docker space on ${machine}`}
+      description={
+        <div className="flex flex-col gap-2">
+          <p>
+            Deletes images that no container uses, running or stopped, and the build cache
+            {total > 0 && `: about ${formatBytes(total)} (${freeable.map((r) => `${r.type.toLowerCase()} ${formatBytes(r.reclaimable)}`).join(", ")})`}.
+          </p>
+          <p>
+            Containers, networks and volumes stay, so no stack or data is lost. A deleted image is pulled or built again the
+            next time something needs it.
+          </p>
+        </div>
+      }
+      confirmLabel="Delete"
+      run={() => dockerPrune(hostId)}
+      done={(_, res) => `Freed ${(res as { reclaimed?: string }).reclaimed ?? "space"} on ${machine}`}
+    />
   );
 }

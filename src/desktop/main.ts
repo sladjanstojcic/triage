@@ -3,7 +3,10 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, dialog, nativeTheme, shell } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, nativeTheme, shell } from "electron";
+import type { Tab } from "@/lib/tabs";
+import { loadSettings, saveSettings, type Settings } from "./settings";
+import { startTray } from "./tray";
 
 /** An app opened from Finder gets launchd's bare PATH; the collectors need docker, lsof, git, tailscale and ssh from the user's shell. */
 function shellPath(): string | undefined {
@@ -22,8 +25,10 @@ function shellPath(): string | undefined {
 
 let win: BrowserWindow | undefined;
 let appUrl = "";
+let settings: Settings;
+let shortcutRegistered = true;
 
-function openWindow() {
+function openWindow(pathname = "/") {
   win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -51,10 +56,35 @@ function openWindow() {
     event.preventDefault();
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
   });
-  void win.loadURL(appUrl);
+  void win.loadURL(`${appUrl}${pathname}`);
+}
+
+/** Bring the window up, opening it if it was closed, and switch to `tab` when given. */
+function show(tab?: Tab) {
+  const pathname = !tab || tab === "overview" ? "/" : `/${tab}`;
+  app.focus({ steal: true });
+  if (!win) return openWindow(pathname);
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  // the dashboard follows popstate (dashboard.tsx), so the tab changes without a reload
+  if (tab) void win.webContents.executeJavaScript(`history.pushState(null, "", ${JSON.stringify(pathname)}); dispatchEvent(new PopStateEvent("popstate"))`);
+}
+
+/** The global shortcut: hide Triage when it is in front, otherwise bring it up. */
+function toggle() {
+  if (win?.isFocused()) app.hide();
+  else show();
+}
+
+function applyShortcut() {
+  globalShortcut.unregisterAll();
+  shortcutRegistered = !settings.shortcut || globalShortcut.register(settings.shortcut, toggle);
 }
 
 async function start() {
+  // `pnpm desktop` runs the stock Electron binary, whose Dock icon is Electron's; the packaged app has its own.
+  if (!app.isPackaged) app.dock?.setIcon(path.join(import.meta.dirname, "..", "build", "icon.png"));
   process.env.PATH = shellPath() ?? `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`;
   // The server reads NODE_ENV when it loads, so set it before the import.
   process.env.NODE_ENV = "production";
@@ -62,6 +92,20 @@ async function start() {
     const server = await import(pathToFileURL(path.join(import.meta.dirname, "server.mjs")).href);
     appUrl = await server.listening;
     openWindow();
+    settings = loadSettings();
+    applyShortcut();
+    const tray = startTray({
+      appUrl,
+      show,
+      settings: () => settings,
+      setSettings: (next) => {
+        settings = next;
+        saveSettings(next);
+        applyShortcut();
+        tray.refreshMenu();
+      },
+      shortcutRegistered: () => shortcutRegistered,
+    });
   } catch (e) {
     const busy = (e as NodeJS.ErrnoException).code === "EADDRINUSE";
     dialog.showErrorBox(
@@ -78,18 +122,14 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!win) {
-      if (appUrl) openWindow();
-      return;
-    }
-    if (win.isMinimized()) win.restore();
-    win.focus();
+    if (appUrl) show();
   });
   // macOS convention: closing the window keeps the app (and server) running; the Dock icon reopens it.
   app.on("window-all-closed", () => {});
   app.on("activate", () => {
     if (!win && appUrl) openWindow();
   });
+  app.on("will-quit", () => globalShortcut.unregisterAll());
 
   // Not top-level await: Electron emits "ready" only after the main module finishes loading.
   void app.whenReady().then(start);
