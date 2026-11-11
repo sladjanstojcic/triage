@@ -55,6 +55,19 @@ export function stateAt(events: PortEvent[], at: string): Map<string, Listener> 
   return state;
 }
 
+/**
+ * Drop the events before `cutoff`, but keep what still listened then as `first` events at the cutoff:
+ * a server running longer than history is kept must not look started later. Returns `events` itself
+ * when nothing is older than the cutoff.
+ */
+export function trim(events: PortEvent[], cutoff: string): PortEvent[] {
+  const from = events.findIndex((e) => e.at >= cutoff);
+  const old = from === -1 ? events.length : from;
+  if (old === 0) return events;
+  const carried = [...stateAt(events.slice(0, old), cutoff).values()].map((l) => ({ ...l, at: cutoff, up: true, first: true }));
+  return [...carried, ...events.slice(old)];
+}
+
 /** Then against now: what has stopped since (with when it stopped), and what started since. */
 export function compare(events: PortEvent[], then: string, now: Map<string, Listener>) {
   const before = stateAt(events, then);

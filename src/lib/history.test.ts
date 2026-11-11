@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PortRow, Snapshot } from "./collect/types";
-import { compare, diff, listeners, type PortEvent, stateAt } from "./history";
+import { compare, diff, listeners, type PortEvent, stateAt, trim } from "./history";
 
 const row = (port: number, pid: number, over: Partial<PortRow> = {}): PortRow => ({
   port, address: "127.0.0.1", ownerKind: "process", pid, processName: "node", owner: "vite", system: false, ...over,
@@ -31,4 +31,14 @@ test("stateAt and compare: what ran then and not now, and what is new", () => {
   const { gone, started } = compare(events, "09:00", now);
   assert.deepEqual(gone.map((l) => [l.port, l.stoppedAt]), [[3000, "10:00"]]);
   assert.deepEqual(started.map((l) => l.port), [5000]);
+});
+
+test("trim: what still ran at the cutoff stays, as already running then", () => {
+  const ev = (at: string, up: boolean, port: number): PortEvent => ({ at, up, key: `${port}/1`, port, what: "x" });
+  // 3000 started before the cutoff and still runs; 4000 started and stopped before it
+  const events = [ev("01", true, 3000), ev("02", true, 4000), ev("03", false, 4000), ev("06", true, 5000)];
+  const kept = trim(events, "05");
+  assert.deepEqual(kept.map((e) => [e.at, e.key, e.up, !!e.first]), [["05", "3000/1", true, true], ["06", "5000/1", true, false]]);
+  assert.deepEqual([...stateAt(kept, "07").keys()], [...stateAt(events, "07").keys()]);
+  assert.equal(trim(kept, "05"), kept);
 });
