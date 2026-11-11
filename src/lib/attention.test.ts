@@ -39,6 +39,20 @@ test("full disk, swap and Docker space are flagged; errors sort first", () => {
   ]);
 });
 
+test("the Docker item says how much cleanup frees and what it keeps", () => {
+  const disk = (rows: [string, number][]) =>
+    attentionItems(snap({ dockerDisk: rows.map(([type, r]) => ({ type, count: 1, active: 0, size: r, reclaimable: r })) }), [], new Map())
+      .find((i) => i.key.endsWith(":reclaim"));
+  assert.equal(disk([["Images", 18 * G], ["Build Cache", 4 * G]])?.detail, "unused images and build cache");
+  assert.equal(
+    disk([["Images", 18 * G], ["Local Volumes", 3 * G]])?.detail,
+    "18.0 GB in unused images and build cache; 3.0 GB in volumes and stopped containers, which cleanup keeps",
+  );
+  const volumesOnly = disk([["Local Volumes", 12 * G]]);
+  assert.match(volumesOnly!.detail!, /volumes/);
+  assert.equal(volumesOnly!.prune, undefined);
+});
+
 test("shared ports, closed launchers, exposed ports", () => {
   const port = (p: number, pid: number, address = "127.0.0.1") =>
     ({ port: p, address, ownerKind: "process", pid, processName: "node", owner: "next", system: false }) as Snapshot["ports"][number];

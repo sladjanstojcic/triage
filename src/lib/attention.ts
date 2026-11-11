@@ -236,13 +236,20 @@ function reclaimItem(
   const reclaim = (rows ?? []).reduce((sum, r) => sum + r.reclaimable, 0);
   if (reclaim < RECLAIM_NOTE) return [];
   const diskTight = !!m?.disk && !!usageLevel(pct(m.disk));
+  // the button deletes only images and build cache; say how much of the total that is, and what stays
+  const prunable = (rows ?? []).filter((r) => PRUNABLE.test(r.type)).reduce((sum, r) => sum + r.reclaimable, 0);
+  const kept = reclaim - prunable;
+  const detail =
+    prunable === 0 ? "unused volumes and stopped containers (docker system prune --volumes)"
+    : kept < RECLAIM_NOTE / 10 ? "unused images and build cache"
+    : `${formatBytes(prunable)} in unused images and build cache; ${formatBytes(kept)} in volumes and stopped containers, which cleanup keeps`;
   return [
     {
       key: `${machine}:reclaim`,
       level: diskTight ? "warn" : "info",
       machine,
       text: `Docker can free ${formatBytes(reclaim)}`,
-      detail: "unused images, volumes and build cache (docker system prune)",
+      detail,
       tab,
       // only images and build cache have a button: they come back with a pull or a build, volumes hold data
       prune: rows?.some((r) => PRUNABLE.test(r.type) && r.reclaimable > 0) ? { hostId } : undefined,
