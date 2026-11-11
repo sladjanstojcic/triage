@@ -49,7 +49,7 @@ Every listening port grouped by project folder, with git branch, worktree badge 
 
 A flat table of every listening TCP port and what owns it: a process, a Docker or Supabase container (mapped through Docker Desktop, OrbStack, Colima or Podman), or an SSH `-L` forward. System services stay hidden until you click **Show hidden**.
 
-Every port, on every tab, shows the protocol it speaks: `http`, `https`, `postgres`, `redis`, `mysql`, `ssh`, `smtp` and so on. Databases are known by what runs them; anything else gets one short look (a TLS handshake, then an HTTP request any server turns down before its app sees it). Only web ports are links, and the copy button next to a port copies a URL for its protocol: `https://localhost:8443`, or `postgresql://postgres:postgres@localhost:54322/postgres` for a Supabase database. Each port's **⋯** menu pins it to the top, hides it, or adds a note; these are kept by port number in `~/.config/triage/ports.json`.
+Every port, on every tab, shows the protocol it speaks: `http`, `https`, `postgres`, `redis`, `mysql`, `ssh`, `smtp` and so on. Databases are known by what runs them, and an SSH forward to a database's usual port (5432, 3306, 6379, 27017) by that port, so a remote database never sees a probe. Anything else gets one short look (a TLS handshake, then an HTTP request any server turns down before its app sees it). Only web ports are links, and the copy button next to a port copies a URL for its protocol: `https://localhost:8443`, or `postgresql://postgres:postgres@localhost:54322/postgres` for a Supabase database. Each port's **⋯** menu pins it to the top, hides it, or adds a note; these are kept by port number in `~/.config/triage/ports.json`.
 
 ![Ports tab: every listening port with its type, command line and project folder](docs/screenshots/ports.png)
 
@@ -63,11 +63,11 @@ Containers grouped by compose or Supabase CLI project, linked to the project fol
 
 Outgoing `ssh`/`autossh` connections with their forwards (including ones from `~/.ssh/config`) and what each forward reaches on the other side. Also detects cloudflared, ngrok, localtunnel, bore, zrok, frp, Tailscale serve/funnel, and lists your Tailscale peers.
 
+![SSH & Tunnels tab: SSH connections with their forwarded ports and the remote services they reach, plus Tailscale peers](docs/screenshots/ssh.png)
+
 ### History
 
-Triage remembers when each port started and stopped listening, for a week (`~/.config/triage/history.jsonl`). The **History** tab compares now with an hour ago, 9:00 this morning or this time yesterday: what ran then and doesn't now, and what is new. Below it is every start and stop of the last day. History is kept while something is looking: the window, or the menu bar icon of the desktop app.
-
-![SSH & Tunnels tab: SSH connections with their forwarded ports and the remote services they reach, plus Tailscale peers](docs/screenshots/ssh.png)
+Triage remembers when each port started and stopped listening, for a week (`~/.config/triage/history.jsonl`). The **History** tab compares now with an hour ago, 9:00 this morning or this time yesterday: what ran then and doesn't now, and what is new. Below it is every start and stop of the last day. History is kept while something is looking: the window, or the menu bar icon of the desktop app. A scan that missed ports (because `lsof` or Docker didn't answer) is left out, so it can't log every server as stopped and started again.
 
 ### Remote
 
@@ -105,7 +105,7 @@ pnpm install
 pnpm dev
 ```
 
-Open <http://127.0.0.1:4777>. Each tab has its own path (`/overview`, `/projects`, `/ports`, `/docker`, `/ssh`, `/remote`), so a reload stays on it.
+Open <http://127.0.0.1:4777>. Each tab has its own path (`/overview`, `/projects`, `/ports`, `/docker`, `/ssh`, `/remote`, `/history`), so a reload stays on it.
 
 | Command | What it does |
 | --- | --- |
@@ -151,7 +151,7 @@ pnpm build
 ln -s "$PWD/dist/triage.mjs" ~/.local/bin/triage   # any folder on your PATH
 
 triage                 # what needs attention, and each project's ports
-triage ports           # every listening port, who started it (--all adds system services)
+triage ports           # every listening port, who started it (--all adds system services and hidden ports)
 triage who 3000        # what is on :3000 and what stopping it takes down
 triage stop 3000       # asks first; --yes for scripts, --force for SIGKILL
 triage --json ...      # the same as JSON
@@ -181,13 +181,13 @@ Triage shows process command lines and can stop processes, and it has no authent
 
 - binds to `127.0.0.1` only
 - rejects requests whose `Host` header isn't `127.0.0.1`/`localhost` on its port (DNS rebinding protection)
-- accepts state-changing requests (stop, add/remove host) and container logs only as JSON with its own `Origin`
+- accepts state-changing requests (stop, Docker cleanup, add/remove host, pins and notes) and container logs only as JSON with its own `Origin`
 
 Any program running as you on this Mac can call it, the `triage` CLI included, just as it could run `kill` itself. Don't expose it through a tunnel or reverse proxy.
 
 ## Tech stack
 
-React 19, Vite, Tailwind CSS 4 and shadcn/ui (Base UI) in the browser. A small Node HTTP server (`src/server`) collects data with `lsof`, `ps`, `sysctl`, `vm_stat`, `df`, `pmset`, `docker` (including `docker stats` for container CPU and memory), `git`, `ssh` and `tailscale`. The desktop app (`src/desktop`) is Electron, packaged with electron-builder. The CLI and its MCP server (`src/cli`) use only Node's standard library.
+React 19, Vite, Tailwind CSS 4 and shadcn/ui (Base UI) in the browser. A small Node HTTP server (`src/server`) collects data with `lsof`, `ps`, `sysctl`, `vm_stat`, `df`, `pmset`, `scutil` (VPNs), `docker` (including `docker stats` for container CPU and memory), `git`, `ssh` and `tailscale`. The desktop app (`src/desktop`) is Electron, packaged with electron-builder. The CLI and its MCP server (`src/cli`) use only Node's standard library.
 
 ## License
 
